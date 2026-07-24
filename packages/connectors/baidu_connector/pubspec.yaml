@@ -1,0 +1,17 @@
+name: baidu_connector
+description: Baidu Netdisk storage connector for MVision.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  knowledge_core:
+    path: ../../knowledge_core
+  platform_api:
+    path: ../../platform_api
+  dio: ^5.4.0
+
+dev_dependencies:
+  test: ^1.24.0

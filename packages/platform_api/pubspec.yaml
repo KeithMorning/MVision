@@ -1,0 +1,15 @@
+name: platform_api
+description: Platform abstraction APIs for MVision. Secure storage, file access, connectivity, etc.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

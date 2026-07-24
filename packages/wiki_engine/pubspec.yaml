@@ -1,0 +1,14 @@
+name: wiki_engine
+description: LLM Wiki compilation engine for MVision.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  knowledge_core:
+    path: ../knowledge_core
+
+dev_dependencies:
+  test: ^1.24.0

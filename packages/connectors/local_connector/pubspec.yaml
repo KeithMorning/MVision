@@ -1,0 +1,16 @@
+name: local_connector
+description: Local directory storage connector for MVision.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  knowledge_core:
+    path: ../../knowledge_core
+  platform_api:
+    path: ../../platform_api
+
+dev_dependencies:
+  test: ^1.24.0

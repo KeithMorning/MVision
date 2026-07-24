@@ -1,0 +1,22 @@
+name: mvision
+description: MVision - Cross-platform AI Knowledge Client
+version: 0.0.1
+publish_to: none
+
+workspace:
+  - apps/client
+  - packages/design_system
+  - packages/knowledge_core
+  - packages/markdown_engine
+  - packages/markdown_reader
+  - packages/markdown_editor
+  - packages/search_engine
+  - packages/sync_engine
+  - packages/wiki_engine
+  - packages/platform_api
+  - packages/connectors/local_connector
+  - packages/connectors/baidu_connector
+  - packages/connectors/webdav_connector
+
+environment:
+  sdk: ^3.6.0

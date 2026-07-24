@@ -1,0 +1,14 @@
+name: sync_engine
+description: Sync engine for MVision. Handles state machine, conflict detection, and offline queue.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  knowledge_core:
+    path: ../knowledge_core
+
+dev_dependencies:
+  test: ^1.24.0

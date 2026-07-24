@@ -1,0 +1,13 @@
+name: markdown_engine
+description: Markdown AST parser for MVision. Pure Dart, no Flutter dependency.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  markdown: ^7.2.2
+
+dev_dependencies:
+  test: ^1.24.0
