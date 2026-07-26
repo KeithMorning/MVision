@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../services/ai_service.dart';
@@ -311,9 +312,7 @@ class _AiPageState extends ConsumerState<AiPage> {
               title: 'Wiki 编译',
               subtitle: '将原始资料自动整理成结构化 Wiki',
               isDark: isDark,
-              onTap: () {
-                // TODO: Navigate to Wiki compilation
-              },
+              onTap: () => context.go('/wiki'),
             ),
             const SizedBox(height: AppSpacing.sm),
             _FeatureCard(
@@ -321,9 +320,7 @@ class _AiPageState extends ConsumerState<AiPage> {
               title: '知识问答',
               subtitle: '基于知识库回答问题，附带来源引用',
               isDark: isDark,
-              onTap: () {
-                // TODO: Navigate to Q&A
-              },
+              onTap: () => context.go('/qa'),
             ),
             const SizedBox(height: AppSpacing.sm),
             _FeatureCard(

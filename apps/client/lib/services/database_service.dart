@@ -120,6 +120,12 @@ class DatabaseService {
     return result.map((row) => row).toList();
   }
 
+  Map<String, dynamic>? getSourceById(String id) {
+    final result = _db.select('SELECT * FROM sources WHERE id = ?', [id]);
+    if (result.isEmpty) return null;
+    return result.first;
+  }
+
   void deleteSource(String id) {
     _db.execute('DELETE FROM documents WHERE source_id = ?', [id]);
     _db.execute('DELETE FROM sync_states WHERE source_id = ?', [id]);

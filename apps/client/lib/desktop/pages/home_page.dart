@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
+import '../../shared/onboarding.dart';
 
 /// Home page - knowledge library dashboard.
 ///
@@ -17,6 +18,18 @@ class HomePage extends ConsumerWidget {
     final isDark = theme.brightness == Brightness.dark;
     final documents = ref.watch(documentsProvider);
     final sources = ref.watch(sourcesProvider);
+
+    // Show onboarding when no sources connected
+    if (sources.isEmpty) {
+      return Scaffold(
+        backgroundColor:
+            isDark ? AppColors.backgroundDark : AppColors.background,
+        body: OnboardingGuide(
+          onAddSource: () => context.go('/settings'),
+          onConfigureAi: () => context.go('/ai'),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor:
@@ -40,9 +53,7 @@ class HomePage extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    sources.isEmpty
-                        ? '连接知识源，开始整理你的知识'
-                        : '${sources.length} 个知识源 · ${documents.length} 个文档',
+                    '${sources.length} 个知识源 · ${documents.length} 个文档',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: isDark
                           ? AppColors.textSecondaryDark
@@ -125,7 +136,7 @@ class HomePage extends ConsumerWidget {
               ),
             ),
           ] else ...[
-            // Empty state
+            // Empty documents state (sources exist but no docs yet)
             SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
@@ -133,7 +144,7 @@ class HomePage extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.inbox_rounded,
+                      Icons.hourglass_empty_rounded,
                       size: 64,
                       color: isDark
                           ? AppColors.textSecondaryDark.withValues(alpha: 0.3)
@@ -141,7 +152,7 @@ class HomePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     Text(
-                      '还没有知识内容',
+                      '知识源已连接，等待扫描',
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -150,7 +161,7 @@ class HomePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      '在设置中添加一个知识源开始使用',
+                      '在设置中触发扫描以索引文档',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -160,8 +171,8 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(height: AppSpacing.lg),
                     FilledButton.icon(
                       onPressed: () => context.go('/settings'),
-                      icon: const Icon(Icons.create_new_folder_rounded, size: 18),
-                      label: const Text('添加知识源'),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('去扫描'),
                     ),
                   ],
                 ),

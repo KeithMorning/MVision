@@ -7,6 +7,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:design_system/design_system.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 
 import '../../app/providers.dart';
 
@@ -31,6 +34,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   String _filePath = '';
   String _title = '';
   Timer? _autosaveTimer;
+  String? _recoveryPath;
+  bool _showRecoveryBanner = false;
+  String? _appSupportPath;
 
   // Undo/redo stacks
   final List<String> _undoStack = [];
@@ -40,8 +46,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   @override
   void initState() {
     super.initState();
+    _initAppSupport();
     _loadDocument();
     _controller.addListener(_onTextChanged);
+  }
+
+  Future<void> _initAppSupport() async {
+    final dir = await getApplicationSupportDirectory();
+    _appSupportPath = dir.path;
   }
 
   @override
@@ -68,6 +80,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     final rootPath = source?['root_path'] as String? ?? '';
     _filePath = p.join(rootPath, path);
 
+    // Check for crash recovery file
+    _checkRecovery();
+
     // Read file content
     try {
       final file = File(_filePath);
@@ -79,10 +94,71 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     }
   }
 
+  /// Check if a recovery file exists from a previous crash.
+  void _checkRecovery() {
+    try {
+      if (_appSupportPath == null) return;
+      final recoveryDir = Directory(p.join(_appSupportPath!, 'recovery'));
+      if (!recoveryDir.existsSync()) return;
+
+      final hash = sha256.convert(utf8.encode(_filePath)).toString().substring(0, 16);
+      final recoveryFile = File(p.join(recoveryDir.path, '$hash.md'));
+      if (recoveryFile.existsSync()) {
+        _recoveryPath = recoveryFile.path;
+        _showRecoveryBanner = true;
+      }
+    } catch (_) {}
+  }
+
+  /// Save recovery file for crash recovery.
+  void _saveRecoveryFile() {
+    try {
+      if (_appSupportPath == null) return;
+      final recoveryDir = Directory(p.join(_appSupportPath!, 'recovery'));
+      if (!recoveryDir.existsSync()) recoveryDir.createSync(recursive: true);
+
+      final hash = sha256.convert(utf8.encode(_filePath)).toString().substring(0, 16);
+      File(p.join(recoveryDir.path, '$hash.md')).writeAsStringSync(_controller.text);
+    } catch (_) {}
+  }
+
+  /// Remove recovery file after successful save.
+  void _clearRecoveryFile() {
+    try {
+      if (_recoveryPath != null) {
+        final f = File(_recoveryPath!);
+        if (f.existsSync()) f.deleteSync();
+        _recoveryPath = null;
+      }
+    } catch (_) {}
+  }
+
+  /// Recover from crash file.
+  void _recover() {
+    try {
+      if (_recoveryPath != null) {
+        final content = File(_recoveryPath!).readAsStringSync();
+        _controller.text = content;
+        setState(() {
+          _isDirty = true;
+          _showRecoveryBanner = false;
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// Dismiss recovery banner.
+  void _dismissRecovery() {
+    _clearRecoveryFile();
+    setState(() => _showRecoveryBanner = false);
+  }
+
   void _onTextChanged() {
     if (!_isDirty) {
       setState(() => _isDirty = true);
     }
+    // Save recovery file immediately for crash safety
+    _saveRecoveryFile();
     // Schedule autosave (2 seconds after last edit)
     _autosaveTimer?.cancel();
     _autosaveTimer = Timer(const Duration(seconds: 2), _save);
@@ -134,6 +210,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         _isDirty = false;
         _isSaving = false;
       });
+      // Clear recovery file after successful save
+      _clearRecoveryFile();
     } catch (e) {
       setState(() => _isSaving = false);
       if (mounted) {
@@ -236,6 +314,22 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       ),
       body: Column(
         children: [
+          // Recovery banner
+          if (_showRecoveryBanner)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+              color: AppColors.warning.withValues(alpha: 0.15),
+              child: Row(
+                children: [
+                  const Icon(Icons.history_rounded, size: 18, color: AppColors.warning),
+                  const SizedBox(width: AppSpacing.sm),
+                  const Expanded(child: Text('检测到上次未保存的编辑内容', style: TextStyle(fontSize: 13))),
+                  TextButton(onPressed: _recover, child: const Text('恢复')),
+                  TextButton(onPressed: _dismissRecovery, child: const Text('忽略')),
+                ],
+              ),
+            ),
           // Toolbar (edit mode only)
           if (!_isPreview) _buildToolbar(isDark),
           // Content

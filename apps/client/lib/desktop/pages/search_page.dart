@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +21,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   List<Map<String, dynamic>> _results = [];
   bool _hasSearched = false;
   String _query = '';
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -31,9 +34,17 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 200), () {
+      _search(query);
+    });
   }
 
   void _search(String query) {
@@ -86,7 +97,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 TextField(
                   controller: _controller,
                   focusNode: _focusNode,
-                  onChanged: _search,
+                  onChanged: _onSearchChanged,
                   style: theme.textTheme.bodyLarge,
                   decoration: InputDecoration(
                     hintText: '搜索标题、正文、路径...',

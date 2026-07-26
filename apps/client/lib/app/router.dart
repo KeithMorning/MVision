@@ -8,7 +8,21 @@ import '../desktop/pages/search_page.dart';
 import '../desktop/pages/settings_page.dart';
 import '../desktop/pages/reader_page.dart';
 import '../desktop/pages/editor_page.dart';
+import '../desktop/pages/wiki_page.dart';
+import '../desktop/pages/qa_page.dart';
 import '../desktop/desktop_shell.dart';
+
+/// Custom fade transition page.
+class FadeTransitionPage extends CustomTransitionPage<void> {
+  FadeTransitionPage({required super.child})
+      : super(
+          transitionDuration: const Duration(milliseconds: 200),
+          reverseTransitionDuration: const Duration(milliseconds: 150),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        );
+}
 
 /// Application router configuration.
 final appRouter = GoRouter(
@@ -34,15 +48,19 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/reader/:id',
           name: 'reader',
-          builder: (context, state) => ReaderPage(
-            documentId: state.pathParameters['id']!,
+          pageBuilder: (context, state) => FadeTransitionPage(
+            child: ReaderPage(
+              documentId: state.pathParameters['id']!,
+            ),
           ),
         ),
         GoRoute(
           path: '/editor/:id',
           name: 'editor',
-          builder: (context, state) => EditorPage(
-            documentId: state.pathParameters['id']!,
+          pageBuilder: (context, state) => FadeTransitionPage(
+            child: EditorPage(
+              documentId: state.pathParameters['id']!,
+            ),
           ),
         ),
         GoRoute(
@@ -50,6 +68,20 @@ final appRouter = GoRouter(
           name: 'ai',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: AiPage(),
+          ),
+        ),
+        GoRoute(
+          path: '/wiki',
+          name: 'wiki',
+          pageBuilder: (context, state) => FadeTransitionPage(
+            child: const WikiPage(),
+          ),
+        ),
+        GoRoute(
+          path: '/qa',
+          name: 'qa',
+          pageBuilder: (context, state) => FadeTransitionPage(
+            child: const QaPage(),
           ),
         ),
         GoRoute(
