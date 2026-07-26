@@ -63,6 +63,35 @@ class DatabaseService {
         tokenize = 'unicode61'
       )
     ''');
+
+    // Sync states (FR-SYNC-001)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_states (
+        source_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        local_hash TEXT NOT NULL DEFAULT '',
+        remote_hash TEXT NOT NULL DEFAULT '',
+        last_synced_hash TEXT NOT NULL DEFAULT '',
+        last_synced_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'synced',
+        PRIMARY KEY (source_id, path)
+      )
+    ''');
+
+    // Sync conflicts (FR-SYNC-002)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        local_hash TEXT NOT NULL,
+        remote_hash TEXT NOT NULL,
+        conflict_path TEXT,
+        detected_at INTEGER NOT NULL,
+        resolved INTEGER NOT NULL DEFAULT 0,
+        resolution TEXT
+      )
+    ''');
   }
 
   // --- Sources ---
@@ -93,6 +122,8 @@ class DatabaseService {
 
   void deleteSource(String id) {
     _db.execute('DELETE FROM documents WHERE source_id = ?', [id]);
+    _db.execute('DELETE FROM sync_states WHERE source_id = ?', [id]);
+    _db.execute('DELETE FROM sync_conflicts WHERE source_id = ?', [id]);
     _db.execute('DELETE FROM sources WHERE id = ?', [id]);
   }
 
@@ -187,6 +218,90 @@ class DatabaseService {
       [query, limit],
     );
     return result.map((row) => row).toList();
+  }
+
+  // --- Sync States (FR-SYNC-001) ---
+
+  void upsertSyncState({
+    required String sourceId,
+    required String path,
+    required String localHash,
+    required String remoteHash,
+    required String lastSyncedHash,
+    int? lastSyncedAt,
+    required String status,
+  }) {
+    _db.execute(
+      '''INSERT OR REPLACE INTO sync_states
+         (source_id, path, local_hash, remote_hash, last_synced_hash, last_synced_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)''',
+      [sourceId, path, localHash, remoteHash, lastSyncedHash, lastSyncedAt, status],
+    );
+  }
+
+  Map<String, dynamic>? getSyncState(String sourceId, String path) {
+    final result = _db.select(
+      'SELECT * FROM sync_states WHERE source_id = ? AND path = ?',
+      [sourceId, path],
+    );
+    if (result.isEmpty) return null;
+    return result.first;
+  }
+
+  List<Map<String, dynamic>> getSyncStates(String sourceId) {
+    final result = _db.select(
+      'SELECT * FROM sync_states WHERE source_id = ?',
+      [sourceId],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  Map<String, String> getLocalHashes(String sourceId) {
+    final result = _db.select(
+      'SELECT path, local_hash FROM sync_states WHERE source_id = ?',
+      [sourceId],
+    );
+    return {for (var row in result) row['path'] as String: row['local_hash'] as String};
+  }
+
+  // --- Sync Conflicts (FR-SYNC-002) ---
+
+  void insertConflict({
+    required String sourceId,
+    required String path,
+    required String localHash,
+    required String remoteHash,
+    String? conflictPath,
+  }) {
+    _db.execute(
+      '''INSERT INTO sync_conflicts
+         (source_id, path, local_hash, remote_hash, conflict_path, detected_at)
+         VALUES (?, ?, ?, ?, ?, ?)''',
+      [sourceId, path, localHash, remoteHash, conflictPath,
+       DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  List<Map<String, dynamic>> getConflicts({bool unresolvedOnly = true}) {
+    final query = unresolvedOnly
+        ? 'SELECT * FROM sync_conflicts WHERE resolved = 0 ORDER BY detected_at DESC'
+        : 'SELECT * FROM sync_conflicts ORDER BY detected_at DESC';
+    final result = _db.select(query);
+    return result.map((row) => row).toList();
+  }
+
+  void resolveConflict(int id, String resolution) {
+    _db.execute(
+      'UPDATE sync_conflicts SET resolved = 1, resolution = ? WHERE id = ?',
+      [resolution, id],
+    );
+  }
+
+  int getConflictCount() {
+    final result = _db.select(
+      'SELECT COUNT(*) as count FROM sync_conflicts WHERE resolved = 0',
+    );
+    return result.first['count'] as int;
   }
 
   void close() {
