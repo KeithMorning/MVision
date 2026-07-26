@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:design_system/design_system.dart';
+
+import '../app/providers.dart';
 
 /// Desktop shell with sidebar navigation and content area.
 ///
 /// Layout follows the requirement:
 /// Navigation | Content | (optional inspector)
-class DesktopShell extends StatelessWidget {
+class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key, required this.child});
 
   final Widget child;
+
+  @override
+  ConsumerState<DesktopShell> createState() => _DesktopShellState();
+}
+
+class _DesktopShellState extends ConsumerState<DesktopShell> {
+  bool _showSidebar = true;
 
   int _selectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
@@ -39,25 +50,64 @@ class DesktopShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final sources = ref.watch(sourcesProvider);
 
-    return Scaffold(
-      body: Row(
-        children: [
-          // Sidebar navigation
-          _Sidebar(
-            selectedIndex: _selectedIndex(context),
-            onDestinationSelected: (i) => _onDestinationSelected(context, i),
-            isDark: isDark,
-          ),
-          // Divider
-          VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: isDark ? AppColors.borderDark : AppColors.border,
-          ),
-          // Content area
-          Expanded(child: child),
-        ],
+    return CallbackShortcuts(
+      bindings: {
+        // Cmd+\: Toggle sidebar
+        const SingleActivator(LogicalKeyboardKey.backslash, meta: true): () {
+          setState(() => _showSidebar = !_showSidebar);
+        },
+        // Cmd+,: Settings
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): () {
+          context.go('/settings');
+        },
+        // Cmd+Shift+F: Global search
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true): () {
+          context.go('/search');
+        },
+        // Cmd+1-4: Navigate to sections
+        const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () {
+          context.go('/home');
+        },
+        const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () {
+          context.go('/library');
+        },
+        const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () {
+          context.go('/ai');
+        },
+        const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () {
+          context.go('/search');
+        },
+      },
+      child: Scaffold(
+        body: Row(
+          children: [
+            // Sidebar navigation (collapsible)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: _showSidebar ? AppContentWidth.sidebar : 0,
+              child: _showSidebar
+                  ? _Sidebar(
+                      selectedIndex: _selectedIndex(context),
+                      onDestinationSelected: (i) => _onDestinationSelected(context, i),
+                      isDark: isDark,
+                      sources: sources,
+                    )
+                  : null,
+            ),
+            // Divider
+            if (_showSidebar)
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: isDark ? AppColors.borderDark : AppColors.border,
+              ),
+            // Content area
+            Expanded(child: widget.child),
+          ],
+        ),
       ),
     );
   }
@@ -68,11 +118,13 @@ class _Sidebar extends StatelessWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.isDark,
+    required this.sources,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final bool isDark;
+  final List<KnowledgeSource> sources;
 
   @override
   Widget build(BuildContext context) {
@@ -119,24 +171,28 @@ class _Sidebar extends StatelessWidget {
                 _NavItem(
                   icon: Icons.home_rounded,
                   label: '首页',
+                  shortcut: '⌘1',
                   isSelected: selectedIndex == 0,
                   onTap: () => onDestinationSelected(0),
                 ),
                 _NavItem(
                   icon: Icons.library_books_rounded,
                   label: '知识库',
+                  shortcut: '⌘2',
                   isSelected: selectedIndex == 1,
                   onTap: () => onDestinationSelected(1),
                 ),
                 _NavItem(
                   icon: Icons.auto_awesome_rounded,
                   label: 'AI',
+                  shortcut: '⌘3',
                   isSelected: selectedIndex == 2,
                   onTap: () => onDestinationSelected(2),
                 ),
                 _NavItem(
                   icon: Icons.search_rounded,
                   label: '搜索',
+                  shortcut: '⌘4',
                   isSelected: selectedIndex == 3,
                   onTap: () => onDestinationSelected(3),
                 ),
@@ -160,6 +216,7 @@ class _Sidebar extends StatelessWidget {
                 _NavItem(
                   icon: Icons.settings_rounded,
                   label: '设置',
+                  shortcut: '⌘,',
                   isSelected: selectedIndex == 4,
                   onTap: () => onDestinationSelected(4),
                 ),
@@ -180,16 +237,22 @@ class _Sidebar extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    Icons.folder_rounded,
+                    sources.isNotEmpty
+                        ? Icons.check_circle_rounded
+                        : Icons.folder_rounded,
                     size: 18,
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary,
+                    color: sources.isNotEmpty
+                        ? AppColors.success
+                        : (isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary),
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
-                      '未连接知识源',
+                      sources.isNotEmpty
+                          ? '${sources.length} 个知识源已连接'
+                          : '未连接知识源',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -214,12 +277,14 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.shortcut,
   });
 
   final IconData icon;
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  final String? shortcut;
 
   @override
   Widget build(BuildContext context) {
@@ -255,20 +320,31 @@ class _NavItem extends StatelessWidget {
                           : AppColors.textSecondary),
                 ),
                 const SizedBox(width: AppSpacing.md),
-                Text(
-                  label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: isSelected
-                        ? (isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimary)
-                        : (isDark
-                            ? AppColors.textSecondaryDark
-                            : AppColors.textSecondary),
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.w400,
+                Expanded(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: isSelected
+                          ? (isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimary)
+                          : (isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondary),
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                 ),
+                if (shortcut != null)
+                  Text(
+                    shortcut!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark.withValues(alpha: 0.6)
+                          : AppColors.textSecondary.withValues(alpha: 0.6),
+                    ),
+                  ),
               ],
             ),
           ),

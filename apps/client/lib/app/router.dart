@@ -7,6 +7,7 @@ import '../desktop/pages/ai_page.dart';
 import '../desktop/pages/search_page.dart';
 import '../desktop/pages/settings_page.dart';
 import '../desktop/pages/reader_page.dart';
+import '../desktop/pages/editor_page.dart';
 import '../desktop/desktop_shell.dart';
 
 /// Application router configuration.
@@ -34,6 +35,13 @@ final appRouter = GoRouter(
           path: '/reader/:id',
           name: 'reader',
           builder: (context, state) => ReaderPage(
+            documentId: state.pathParameters['id']!,
+          ),
+        ),
+        GoRoute(
+          path: '/editor/:id',
+          name: 'editor',
+          builder: (context, state) => EditorPage(
             documentId: state.pathParameters['id']!,
           ),
         ),

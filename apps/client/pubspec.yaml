@@ -18,6 +18,7 @@ dependencies:
   crypto: ^3.0.3
   file_picker: ^8.0.0
   flutter_markdown: ^0.7.0
+  markdown: ^7.2.0
   design_system:
     path: ../../packages/design_system
   knowledge_core:
