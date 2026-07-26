@@ -19,6 +19,8 @@ dependencies:
   file_picker: ^8.0.0
   flutter_markdown: ^0.7.0
   markdown: ^7.2.0
+  dio: ^5.4.0
+  flutter_secure_storage: ^9.0.0
   design_system:
     path: ../../packages/design_system
   knowledge_core:
