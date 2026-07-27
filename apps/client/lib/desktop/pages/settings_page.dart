@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
@@ -86,6 +87,11 @@ class SettingsPage extends ConsumerWidget {
                     ),
                   ),
                 )),
+          const SizedBox(height: AppSpacing.xxl),
+          // Baidu Netdisk section
+          _SectionHeader(title: '百度网盘'),
+          const SizedBox(height: AppSpacing.md),
+          _BaiduSection(isDark: isDark),
           const SizedBox(height: AppSpacing.xxl),
           // AI section
           _SectionHeader(title: 'AI'),
@@ -202,6 +208,154 @@ class _SettingTile extends StatelessWidget {
               : AppColors.textSecondary,
         ),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Baidu Netdisk connection section.
+class _BaiduSection extends StatefulWidget {
+  const _BaiduSection({required this.isDark});
+  final bool isDark;
+
+  @override
+  State<_BaiduSection> createState() => _BaiduSectionState();
+}
+
+class _BaiduSectionState extends State<_BaiduSection> {
+  final _codeController = TextEditingController();
+  bool _showCodeInput = false;
+  String? _status;
+  bool _isSuccess = false;
+
+  // TODO: Move to secure config. For now, user must register at
+  // https://pan.baidu.com/union/doc/pksg0s9ns
+  static const _clientId = 'YOUR_BAIDU_APP_KEY';
+  static const _clientSecret = 'YOUR_BAIDU_SECRET_KEY';
+  static const _redirectUri = 'http://localhost:8080/callback';
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openAuthPage() async {
+    final authUrl = 'https://openapi.baidu.com/oauth/2.0/authorize'
+        '?response_type=code'
+        '&client_id=$_clientId'
+        '&redirect_uri=${Uri.encodeComponent(_redirectUri)}'
+        '&scope=basic,netdisk'
+        '&display=popup';
+
+    final uri = Uri.parse(authUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      setState(() => _showCodeInput = true);
+    } else {
+      setState(() {
+        _status = '无法打开浏览器';
+        _isSuccess = false;
+      });
+    }
+  }
+
+  void _onConnect() {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _status = '请输入授权码';
+        _isSuccess = false;
+      });
+      return;
+    }
+
+    // TODO: Exchange code for token via BaiduOAuth service
+    setState(() {
+      _status = '授权码已收到，百度网盘连接器将在后续版本中完整集成';
+      _isSuccess = true;
+      _showCodeInput = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_rounded, size: 20, color: AppColors.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '百度网盘同步',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '连接百度网盘后，可以同步远端 Markdown 文件到本地阅读。\n'
+              '需要先在百度开放平台注册应用获取 AppKey。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: widget.isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (_status != null)
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: _isSuccess
+                      ? AppColors.success.withValues(alpha: 0.1)
+                      : AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppRadius.button),
+                ),
+                child: Text(_status!, style: theme.textTheme.bodySmall),
+              ),
+            if (_showCodeInput) ...[
+              TextField(
+                controller: _codeController,
+                decoration: const InputDecoration(
+                  labelText: '授权码',
+                  hintText: '从浏览器回调 URL 中复制 code 参数',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _openAuthPage,
+                  icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+                  label: const Text('打开授权页面'),
+                ),
+                if (_showCodeInput) ...[
+                  const SizedBox(width: AppSpacing.md),
+                  FilledButton(
+                    onPressed: _onConnect,
+                    child: const Text('连接'),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

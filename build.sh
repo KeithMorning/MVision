@@ -42,7 +42,8 @@ flutter pub get --no-example > /dev/null 2>&1 || error "pub get failed"
 build_macos() {
   info "Building macOS ($MODE)..."
   flutter build macos --$MODE 2>&1 | tail -3
-  local app="$CLIENT_DIR/build/macos/Build/Products/${MODE^}/mvision_client.app"
+  local mode_cap=$(echo "$MODE" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+  local app="$CLIENT_DIR/build/macos/Build/Products/${mode_cap}/mvision_client.app"
   if [ -d "$app" ]; then
     local size=$(du -sh "$app" | cut -f1)
     info "✓ macOS build complete: $app ($size)"
