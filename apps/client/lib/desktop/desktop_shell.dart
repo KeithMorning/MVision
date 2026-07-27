@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:design_system/design_system.dart';
 
 import '../app/providers.dart';
+import '../shared/platform_keys.dart';
 
 /// Desktop shell with sidebar navigation and content area.
 ///
@@ -54,29 +55,29 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
     return CallbackShortcuts(
       bindings: {
-        // Cmd+\: Toggle sidebar
-        const SingleActivator(LogicalKeyboardKey.backslash, meta: true): () {
+        // Cmd/Ctrl+\: Toggle sidebar
+        PlatformKeys.activate(LogicalKeyboardKey.backslash): () {
           setState(() => _showSidebar = !_showSidebar);
         },
-        // Cmd+,: Settings
-        const SingleActivator(LogicalKeyboardKey.comma, meta: true): () {
+        // Cmd/Ctrl+,: Settings
+        PlatformKeys.activate(LogicalKeyboardKey.comma): () {
           context.go('/settings');
         },
-        // Cmd+Shift+F: Global search
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true): () {
+        // Cmd/Ctrl+Shift+F: Global search
+        PlatformKeys.activate(LogicalKeyboardKey.keyF, shift: true): () {
           context.go('/search');
         },
-        // Cmd+1-4: Navigate to sections
-        const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () {
+        // Cmd/Ctrl+1-4: Navigate to sections
+        PlatformKeys.activate(LogicalKeyboardKey.digit1): () {
           context.go('/home');
         },
-        const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () {
+        PlatformKeys.activate(LogicalKeyboardKey.digit2): () {
           context.go('/library');
         },
-        const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () {
+        PlatformKeys.activate(LogicalKeyboardKey.digit3): () {
           context.go('/ai');
         },
-        const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () {
+        PlatformKeys.activate(LogicalKeyboardKey.digit4): () {
           context.go('/search');
         },
       },
@@ -171,28 +172,28 @@ class _Sidebar extends StatelessWidget {
                 _NavItem(
                   icon: Icons.home_rounded,
                   label: '首页',
-                  shortcut: '⌘1',
+                  shortcut: PlatformKeys.label('1'),
                   isSelected: selectedIndex == 0,
                   onTap: () => onDestinationSelected(0),
                 ),
                 _NavItem(
                   icon: Icons.library_books_rounded,
                   label: '知识库',
-                  shortcut: '⌘2',
+                  shortcut: PlatformKeys.label('2'),
                   isSelected: selectedIndex == 1,
                   onTap: () => onDestinationSelected(1),
                 ),
                 _NavItem(
                   icon: Icons.auto_awesome_rounded,
                   label: 'AI',
-                  shortcut: '⌘3',
+                  shortcut: PlatformKeys.label('3'),
                   isSelected: selectedIndex == 2,
                   onTap: () => onDestinationSelected(2),
                 ),
                 _NavItem(
                   icon: Icons.search_rounded,
                   label: '搜索',
-                  shortcut: '⌘4',
+                  shortcut: PlatformKeys.label('4'),
                   isSelected: selectedIndex == 3,
                   onTap: () => onDestinationSelected(3),
                 ),
@@ -216,7 +217,7 @@ class _Sidebar extends StatelessWidget {
                 _NavItem(
                   icon: Icons.settings_rounded,
                   label: '设置',
-                  shortcut: '⌘,',
+                  shortcut: PlatformKeys.label(','),
                   isSelected: selectedIndex == 4,
                   onTap: () => onDestinationSelected(4),
                 ),

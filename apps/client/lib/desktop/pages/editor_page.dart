@@ -12,6 +12,7 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 import '../../app/providers.dart';
+import '../../shared/platform_keys.dart';
 
 /// Markdown editor page with edit/preview toggle and autosave.
 class EditorPage extends ConsumerStatefulWidget {
@@ -375,9 +376,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   Widget _buildEditor(ThemeData theme, bool isDark) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true): _redo,
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _save,
+        PlatformKeys.activate(LogicalKeyboardKey.keyZ): _undo,
+        PlatformKeys.activate(LogicalKeyboardKey.keyZ, shift: true): _redo,
+        PlatformKeys.activate(LogicalKeyboardKey.keyS): _save,
       },
       child: TextField(
         controller: _controller,

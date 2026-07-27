@@ -1,17 +1,38 @@
-# mvision_client
+# MVision Client
 
-A new Flutter project.
+MVision 的 Flutter 客户端。当前 Windows 端处于 Phase 0 平台接入阶段；
+桌面 UI 的本地知识阅读器切片在 `lib/desktop/` 中。
 
-## Getting Started
+## Windows 开发环境
 
-This project is a starting point for a Flutter application.
+- Flutter 3.44.8+（Dart 3.12.2+）
+- Visual Studio 2022，并安装 **Desktop development with C++** workload
+- Windows runner 需先由匹配版本的 Flutter SDK 生成：
 
-A few resources to get you started if this is your first Flutter project:
+  ```powershell
+  cd apps/client
+  flutter create --platforms=windows .
+  ```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 构建与验证
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+从仓库根目录执行：
+
+```powershell
+# SDK 位于默认路径 E:\Web\Flutter\flutter_windows_3.44.8-stable\flutter 时
+.\build.ps1
+
+# SDK 位于其他位置时
+$env:MVISION_FLUTTER_HOME = 'D:\SDKs\flutter'
+.\build.ps1 -Mode debug
+```
+
+构建脚本会执行依赖解析并产出 `build/windows/x64/runner/<mode>/mvision_client.exe`。
+Windows runner 生成后还应运行：
+
+```powershell
+cd apps/client
+flutter test
+flutter analyze
+flutter build windows --debug
+```
