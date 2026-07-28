@@ -188,7 +188,7 @@ class _SettingTile extends StatelessWidget {
   }
 }
 
-/// Baidu Netdisk connection section (BDUSS cookie auth - Phase 2).
+/// Baidu Netdisk connection section (OAuth + BDUSS support).
 class _BaiduSection extends StatefulWidget {
   const _BaiduSection({required this.isDark});
   final bool isDark;
@@ -198,19 +198,52 @@ class _BaiduSection extends StatefulWidget {
 }
 
 class _BaiduSectionState extends State<_BaiduSection> {
+  final _appKeyController = TextEditingController();
+  final _secretKeyController = TextEditingController();
   final _bdussController = TextEditingController();
-  final _stokenController = TextEditingController();
   String? _status;
   bool _isSuccess = false;
+  bool _useOAuth = true;
 
   @override
   void dispose() {
+    _appKeyController.dispose();
+    _secretKeyController.dispose();
     _bdussController.dispose();
-    _stokenController.dispose();
     super.dispose();
   }
 
   void _onConnect() {
+    if (_useOAuth) {
+      _connectOAuth();
+    } else {
+      _connectBduss();
+    }
+  }
+
+  void _connectOAuth() {
+    final appKey = _appKeyController.text.trim();
+    final secretKey = _secretKeyController.text.trim();
+    
+    if (appKey.isEmpty || secretKey.isEmpty) {
+      setState(() {
+        _status = '请输入 AppKey 和 SecretKey';
+        _isSuccess = false;
+      });
+      return;
+    }
+
+    // TODO: Implement OAuth flow
+    // 1. Open browser for authorization
+    // 2. Capture redirect with auth code
+    // 3. Exchange code for access token
+    setState(() {
+      _status = 'OAuth 配置已保存。完整同步功能开发中...';
+      _isSuccess = true;
+    });
+  }
+
+  void _connectBduss() {
     final bduss = _bdussController.text.trim();
     if (bduss.isEmpty) {
       setState(() {
@@ -220,9 +253,8 @@ class _BaiduSectionState extends State<_BaiduSection> {
       return;
     }
 
-    // TODO: Validate BDUSS by calling pan.baidu.com API
     setState(() {
-      _status = 'BDUSS 已保存，百度网盘同步将在 Phase 2 中完整实现';
+      _status = 'BDUSS 已保存。完整同步功能开发中...';
       _isSuccess = true;
     });
   }
@@ -251,16 +283,16 @@ class _BaiduSectionState extends State<_BaiduSection> {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '使用 BDUSS Cookie 认证（类似 BaiduPCS-Go）。\n'
-              '登录 pan.baidu.com → F12 → Application → Cookies → 复制 BDUSS',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: widget.isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-                height: 1.5,
-              ),
+            const SizedBox(height: AppSpacing.md),
+            // Auth method toggle
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('OAuth'), icon: Icon(Icons.key_rounded, size: 16)),
+                ButtonSegment(value: false, label: Text('BDUSS'), icon: Icon(Icons.cookie_rounded, size: 16)),
+              ],
+              selected: {_useOAuth},
+              onSelectionChanged: (v) => setState(() => _useOAuth = v.first),
+              showSelectedIcon: false,
             ),
             const SizedBox(height: AppSpacing.md),
             if (_status != null)
@@ -275,25 +307,60 @@ class _BaiduSectionState extends State<_BaiduSection> {
                 ),
                 child: Text(_status!, style: theme.textTheme.bodySmall),
               ),
-            TextField(
-              controller: _bdussController,
-              decoration: const InputDecoration(
-                labelText: 'BDUSS',
-                hintText: '从浏览器 Cookies 中复制 BDUSS 值',
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (_useOAuth) ...[
+              Text(
+                '使用百度开放平台 OAuth 授权。\n'
+                '前往 openapi.baidu.com 创建应用获取凭证。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: widget.isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  height: 1.5,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _stokenController,
-              decoration: const InputDecoration(
-                labelText: 'STOKEN (可选)',
-                hintText: '从浏览器 Cookies 中复制 STOKEN 值',
-                border: OutlineInputBorder(),
-                isDense: true,
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _appKeyController,
+                decoration: const InputDecoration(
+                  labelText: 'AppKey (Client ID)',
+                  hintText: '百度开放平台 AppKey',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _secretKeyController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'SecretKey',
+                  hintText: '百度开放平台 SecretKey',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ] else ...[
+              Text(
+                '使用 BDUSS Cookie 认证（类似 BaiduPCS-Go）。\n'
+                '登录 pan.baidu.com → F12 → Application → Cookies → 复制 BDUSS',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: widget.isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _bdussController,
+                decoration: const InputDecoration(
+                  labelText: 'BDUSS',
+                  hintText: '从浏览器 Cookies 中复制 BDUSS 值',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             FilledButton.icon(
               onPressed: _onConnect,
