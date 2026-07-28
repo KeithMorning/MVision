@@ -56,10 +56,24 @@ class _AiPageState extends ConsumerState<AiPage> {
   @override
   void initState() {
     super.initState();
-    // Load config after first frame to ensure provider is ready
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadConfig();
+    // Listen for config changes (async load completion)
+    ref.listenManual(aiConfigProvider, (prev, next) {
+      if (next != null && !_configLoaded) {
+        _populateFields(next);
+      }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Try loading config synchronously (works if already cached)
+    if (!_configLoaded) {
+      final config = ref.read(aiConfigProvider);
+      if (config != null) {
+        _populateFields(config);
+      }
+    }
   }
 
   @override
@@ -70,14 +84,12 @@ class _AiPageState extends ConsumerState<AiPage> {
     super.dispose();
   }
 
-  void _loadConfig() {
-    final config = ref.read(aiConfigProvider);
-    if (config != null && !_configLoaded) {
-      _baseUrlController.text = config.baseUrl;
-      _apiKeyController.text = config.apiKey;
-      _modelController.text = config.model;
-      _configLoaded = true;
-    }
+  void _populateFields(AiConfig config) {
+    if (_configLoaded) return;
+    _baseUrlController.text = config.baseUrl;
+    _apiKeyController.text = config.apiKey;
+    _modelController.text = config.model;
+    _configLoaded = true;
   }
 
   Future<void> _testConnection() async {
@@ -124,18 +136,6 @@ class _AiPageState extends ConsumerState<AiPage> {
     final isDark = theme.brightness == Brightness.dark;
     final config = ref.watch(aiConfigProvider);
     final isConfigured = config?.isConfigured ?? false;
-
-    // React to async config load
-    if (config != null && !_configLoaded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _baseUrlController.text = config.baseUrl;
-          _apiKeyController.text = config.apiKey;
-          _modelController.text = config.model;
-          _configLoaded = true;
-        }
-      });
-    }
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
