@@ -274,12 +274,64 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   /// Process [[Wiki Link]] syntax into Markdown links.
   String _processWikiLinks(String content) {
-    return content.replaceAllMapped(
+    // First process embeds ![[note]]
+    var processed = _processEmbeds(content);
+    
+    // Then process regular wiki links [[target]] or [[target|display]]
+    return processed.replaceAllMapped(
       RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'),
       (match) {
         final target = match.group(1)!.trim();
         final display = match.group(2)?.trim() ?? target;
         return '[$display](wiki://${Uri.encodeComponent(target)})';
+      },
+    );
+  }
+
+  /// Process ![[embed]] syntax to inline note content.
+  String _processEmbeds(String content) {
+    final db = ref.read(databaseProvider);
+    final vault = ref.read(vaultProvider);
+    if (vault == null) return content;
+
+    return content.replaceAllMapped(
+      RegExp(r'!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'),
+      (match) {
+        final target = match.group(1)!.trim();
+        
+        // Search for the document
+        final results = db.search(target, limit: 1);
+        if (results.isEmpty) {
+          return '*未找到嵌入内容: $target*';
+        }
+
+        final doc = results.first;
+        final path = doc['path'] as String;
+        final fullPath = p.join(vault.rootPath, path);
+
+        try {
+          final file = File(fullPath);
+          if (file.existsSync()) {
+            var embedContent = file.readAsStringSync();
+            
+            // Remove YAML frontmatter if present
+            if (embedContent.startsWith('---')) {
+              final endIndex = embedContent.indexOf('---', 3);
+              if (endIndex != -1) {
+                embedContent = embedContent.substring(endIndex + 3).trim();
+              }
+            }
+            
+            // Add a subtle border/quote style by prefixing with >
+            final lines = embedContent.split('\n');
+            final quotedLines = lines.map((line) => '> $line').join('\n');
+            return '\n$quotedLines\n';
+          }
+        } catch (e) {
+          return '*嵌入错误: $e*';
+        }
+        
+        return '*未找到嵌入内容: $target*';
       },
     );
   }

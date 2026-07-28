@@ -13,6 +13,10 @@ import 'dart:convert';
 
 import '../../app/providers.dart';
 import '../../shared/platform_keys.dart';
+import '../widgets/markdown_highlight_controller.dart';
+
+/// View mode for the editor.
+enum EditorViewMode { edit, preview, split }
 
 /// Markdown editor page with edit/preview toggle and autosave.
 class EditorPage extends ConsumerStatefulWidget {
@@ -26,11 +30,12 @@ class EditorPage extends ConsumerStatefulWidget {
 }
 
 class _EditorPageState extends ConsumerState<EditorPage> {
-  final _controller = TextEditingController();
+  late MarkdownHighlightController _controller;
   final _scrollController = ScrollController();
+  final _previewScrollController = ScrollController();
   final _focusNode = FocusNode();
 
-  bool _isPreview = false;
+  EditorViewMode _viewMode = EditorViewMode.edit;
   bool _isDirty = false;
   bool _isSaving = false;
   String _filePath = '';
@@ -39,6 +44,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   String? _recoveryPath;
   bool _showRecoveryBanner = false;
   String? _appSupportPath;
+
+  // Word count
+  int _wordCount = 0;
+
+  // Wiki link autocomplete
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _autocompleteOverlay;
+  List<String> _autocompleteSuggestions = [];
+  int _autocompleteIndex = 0;
+  bool _showAutocomplete = false;
 
   // Undo/redo stacks
   final List<String> _undoStack = [];
@@ -50,7 +65,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     super.initState();
     _initAppSupport();
     _loadDocument();
+    _controller = MarkdownHighlightController(
+      isDark: WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark,
+    );
     _controller.addListener(_onTextChanged);
+    _updateWordCount();
   }
 
   Future<void> _initAppSupport() async {
@@ -61,10 +80,27 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   @override
   void dispose() {
     _autosaveTimer?.cancel();
+    _autocompleteOverlay?.remove();
     _controller.dispose();
     _scrollController.dispose();
+    _previewScrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _updateWordCount() {
+    final text = _controller.text;
+    setState(() {
+      // Count words (split by whitespace, filter empty)
+      _wordCount = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    });
+  }
+
+  String get _readingTime {
+    // Average reading speed: 200 words per minute
+    final minutes = (_wordCount / 200).ceil();
+    if (minutes < 1) return '< 1 分钟';
+    return '$minutes 分钟';
   }
 
   void _loadDocument() {
@@ -178,9 +214,158 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     }
     // Save recovery file immediately for crash safety
     _saveRecoveryFile();
+    // Update word count
+    _updateWordCount();
+    // Check for wiki link autocomplete
+    _checkWikiLinkAutocomplete();
     // Schedule autosave (2 seconds after last edit)
     _autosaveTimer?.cancel();
     _autosaveTimer = Timer(const Duration(seconds: 2), _save);
+  }
+
+  void _checkWikiLinkAutocomplete() {
+    final selection = _controller.selection;
+    if (!selection.isCollapsed) {
+      _hideAutocomplete();
+      return;
+    }
+
+    final text = _controller.text;
+    final cursorPos = selection.baseOffset;
+    
+    // Find [[ before cursor
+    final textBefore = text.substring(0, cursorPos);
+    final wikiMatch = RegExp(r'\[\[([^\]]*)$').firstMatch(textBefore);
+    
+    if (wikiMatch != null) {
+      final query = wikiMatch.group(1) ?? '';
+      _showAutocompleteSuggestions(query);
+    } else {
+      _hideAutocomplete();
+    }
+  }
+
+  void _showAutocompleteSuggestions(String query) {
+    final db = ref.read(databaseProvider);
+    final docs = db.getAllDocumentTitles();
+    
+    // Filter and sort by relevance
+    _autocompleteSuggestions = docs
+        .map((d) => d['title'] as String)
+        .where((title) => 
+            query.isEmpty || title.toLowerCase().contains(query.toLowerCase()))
+        .take(8)
+        .toList();
+
+    if (_autocompleteSuggestions.isEmpty) {
+      _hideAutocomplete();
+      return;
+    }
+
+    _autocompleteIndex = 0;
+    _showAutocomplete = true;
+    _updateAutocompleteOverlay();
+  }
+
+  void _updateAutocompleteOverlay() {
+    _autocompleteOverlay?.remove();
+    
+    if (!_showAutocomplete || _autocompleteSuggestions.isEmpty) return;
+
+    _autocompleteOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        width: 300,
+        child: CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: const Offset(0, 24),
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 240),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                itemCount: _autocompleteSuggestions.length,
+                itemBuilder: (context, index) {
+                  final title = _autocompleteSuggestions[index];
+                  final isSelected = index == _autocompleteIndex;
+                  return InkWell(
+                    onTap: () => _insertWikiLink(title),
+                    borderRadius: BorderRadius.circular(AppRadius.button),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xs,
+                      ),
+                      color: isSelected 
+                          ? AppColors.primary.withValues(alpha: 0.1) 
+                          : null,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.description_outlined,
+                            size: 16,
+                            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isSelected ? AppColors.primary : null,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(_autocompleteOverlay!);
+  }
+
+  void _hideAutocomplete() {
+    _showAutocomplete = false;
+    _autocompleteOverlay?.remove();
+    _autocompleteOverlay = null;
+  }
+
+  void _insertWikiLink(String title) {
+    final selection = _controller.selection;
+    final text = _controller.text;
+    final cursorPos = selection.baseOffset;
+    
+    // Find [[ before cursor and replace
+    final textBefore = text.substring(0, cursorPos);
+    final wikiMatch = RegExp(r'\[\[([^\]]*)$').firstMatch(textBefore);
+    
+    if (wikiMatch != null) {
+      final start = wikiMatch.start;
+      final newText = '${text.substring(0, start)}[[$title]]${text.substring(cursorPos)}';
+      _controller.text = newText;
+      _controller.selection = TextSelection.collapsed(
+        offset: start + title.length + 4, // [[title]]
+      );
+    }
+    
+    _hideAutocomplete();
+    _focusNode.requestFocus();
   }
 
   void _pushUndo() {
@@ -308,14 +493,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             tooltip: '重做',
           ),
           const SizedBox(width: AppSpacing.sm),
-          // Edit/Preview toggle
-          SegmentedButton<bool>(
+          // Edit/Preview/Split toggle
+          SegmentedButton<EditorViewMode>(
             segments: const [
-              ButtonSegment(value: false, icon: Icon(Icons.edit_rounded, size: 18)),
-              ButtonSegment(value: true, icon: Icon(Icons.visibility_rounded, size: 18)),
+              ButtonSegment(value: EditorViewMode.edit, icon: Icon(Icons.edit_rounded, size: 18)),
+              ButtonSegment(value: EditorViewMode.split, icon: Icon(Icons.view_column_rounded, size: 18)),
+              ButtonSegment(value: EditorViewMode.preview, icon: Icon(Icons.visibility_rounded, size: 18)),
             ],
-            selected: {_isPreview},
-            onSelectionChanged: (v) => setState(() => _isPreview = v.first),
+            selected: {_viewMode},
+            onSelectionChanged: (v) => setState(() => _viewMode = v.first),
             showSelectedIcon: false,
             style: ButtonStyle(
               visualDensity: VisualDensity.compact,
@@ -350,11 +536,87 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               ),
             ),
           // Toolbar (edit mode only)
-          if (!_isPreview) _buildToolbar(isDark),
+          if (_viewMode != EditorViewMode.preview) _buildToolbar(isDark),
           // Content
           Expanded(
-            child: _isPreview ? _buildPreview(theme, isDark) : _buildEditor(theme, isDark),
+            child: _buildContent(theme, isDark),
           ),
+          // Status bar
+          _buildStatusBar(isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(ThemeData theme, bool isDark) {
+    switch (_viewMode) {
+      case EditorViewMode.edit:
+        return _buildEditor(theme, isDark);
+      case EditorViewMode.preview:
+        return _buildPreview(theme, isDark);
+      case EditorViewMode.split:
+        return Row(
+          children: [
+            Expanded(child: _buildEditor(theme, isDark)),
+            Container(
+              width: 1,
+              color: isDark ? AppColors.borderDark : AppColors.border,
+            ),
+            Expanded(child: _buildPreview(theme, isDark)),
+          ],
+        );
+    }
+  }
+
+  Widget _buildStatusBar(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceVariantDark : AppColors.surfaceVariant,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? AppColors.borderDark : AppColors.border,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.text_fields_rounded, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '$_wordCount 字',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(width: AppSpacing.lg),
+          Icon(Icons.timer_outlined, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '阅读 $_readingTime',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const Spacer(),
+          if (_isDirty)
+            Row(
+              children: [
+                Icon(Icons.circle_rounded, size: 8, color: AppColors.warning),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  '未保存',
+                  style: TextStyle(fontSize: 12, color: AppColors.warning),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Icon(Icons.check_circle_rounded, size: 14, color: AppColors.success),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  '已保存',
+                  style: TextStyle(fontSize: 12, color: AppColors.success),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -392,28 +654,59 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   }
 
   Widget _buildEditor(ThemeData theme, bool isDark) {
-    return CallbackShortcuts(
-      bindings: {
-        PlatformKeys.activate(LogicalKeyboardKey.keyZ): _undo,
-        PlatformKeys.activate(LogicalKeyboardKey.keyZ, shift: true): _redo,
-        PlatformKeys.activate(LogicalKeyboardKey.keyS): _save,
-      },
-      child: TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        scrollController: _scrollController,
-        maxLines: null,
-        expands: true,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontFamily: 'monospace',
-          height: 1.7,
-        ),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.all(AppSpacing.xxl),
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: CallbackShortcuts(
+        bindings: {
+          PlatformKeys.activate(LogicalKeyboardKey.keyZ): _undo,
+          PlatformKeys.activate(LogicalKeyboardKey.keyZ, shift: true): _redo,
+          PlatformKeys.activate(LogicalKeyboardKey.keyS): _save,
+        },
+        child: KeyboardListener(
+          focusNode: FocusNode(),
+          onKeyEvent: _handleKeyEvent,
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            scrollController: _scrollController,
+            maxLines: null,
+            expands: true,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontFamily: 'monospace',
+              height: 1.7,
+            ),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(AppSpacing.xxl),
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  void _handleKeyEvent(KeyEvent event) {
+    if (!_showAutocomplete) return;
+    
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() {
+          _autocompleteIndex = (_autocompleteIndex + 1) % _autocompleteSuggestions.length;
+        });
+        _updateAutocompleteOverlay();
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() {
+          _autocompleteIndex = (_autocompleteIndex - 1 + _autocompleteSuggestions.length) % _autocompleteSuggestions.length;
+        });
+        _updateAutocompleteOverlay();
+      } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+        if (_autocompleteSuggestions.isNotEmpty) {
+          _insertWikiLink(_autocompleteSuggestions[_autocompleteIndex]);
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _hideAutocomplete();
+      }
+    }
   }
 
   Widget _buildPreview(ThemeData theme, bool isDark) {

@@ -467,6 +467,38 @@ class DatabaseService {
     return result.first['count'] as int;
   }
 
+  /// Get all documents that link to a specific document.
+  List<Map<String, dynamic>> getDocumentsLinkingTo(String targetDocId) {
+    final result = _db.select(
+      '''SELECT DISTINCT d.* 
+         FROM documents d
+         JOIN links l ON l.source_doc_id = d.id
+         WHERE l.target_doc_id = ?''',
+      [targetDocId],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  /// Update document path and title (used when renaming).
+  void updateDocumentPath(String docId, String newPath, String newTitle) {
+    _db.execute(
+      'UPDATE documents SET path = ?, title = ? WHERE id = ?',
+      [newPath, newTitle, docId],
+    );
+    // Also update FTS index
+    _db.execute(
+      'UPDATE documents_fts SET title = ? WHERE document_id = ?',
+      [newTitle, docId],
+    );
+  }
+
+  /// Get document by path.
+  Map<String, dynamic>? getDocumentByPath(String path) {
+    final result = _db.select('SELECT * FROM documents WHERE path = ?', [path]);
+    if (result.isEmpty) return null;
+    return result.first;
+  }
+
   // --- Tags ---
 
   int getOrCreateTag(String name) {

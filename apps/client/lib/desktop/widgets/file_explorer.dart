@@ -298,16 +298,96 @@ class _FileExplorerState extends ConsumerState<FileExplorer> {
       final oldFull = p.join(vault.rootPath, node.relativePath);
       final newFull = p.join(vault.rootPath, newRelPath);
 
+      // Check if file exists
+      if (File(newFull).existsSync()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('目标文件已存在')),
+          );
+        }
+        return;
+      }
+
       try {
+        final db = ref.read(databaseProvider);
+        final oldTitle = p.basenameWithoutExtension(node.name);
+        final newTitle = p.basenameWithoutExtension(newFileName);
+        
+        // Get document ID before rename
+        final doc = db.getDocumentByPath(node.relativePath);
+        
+        // Rename the file
         await File(oldFull).rename(newFull);
+        
+        // Update database record
+        if (doc != null) {
+          final docId = doc['id'] as String;
+          db.updateDocumentPath(docId, newRelPath, newTitle);
+          
+          // Update links in other files that reference this file
+          if (ext == '.md') {
+            await _updateLinksInOtherFiles(db, vault, oldTitle, newTitle);
+          }
+        }
+        
         ref.read(fileTreeProvider.notifier).refresh();
         await scanVault(ref);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已重命名为 "$newFileName"')),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('重命名失败: $e')),
           );
         }
+      }
+    }
+  }
+
+  /// Update [[wiki links]] in other files that reference the renamed file.
+  Future<void> _updateLinksInOtherFiles(
+    dynamic db,
+    dynamic vault,
+    String oldTitle,
+    String newTitle,
+  ) async {
+    // Find all documents that might link to this file
+    final allDocs = db.getAllDocumentTitles();
+    
+    for (final doc in allDocs) {
+      final path = doc['path'] as String;
+      final fullPath = p.join(vault.rootPath, path);
+      final file = File(fullPath);
+      
+      if (!file.existsSync()) continue;
+      
+      try {
+        var content = await file.readAsString();
+        
+        // Check if content contains links to old title
+        // Match [[oldTitle]] or [[oldTitle|display]]
+        final wikiLinkPattern = RegExp('\\[\\[$oldTitle(\\|[^\\]]+)?\\]\\]');
+        
+        if (wikiLinkPattern.hasMatch(content)) {
+          // Replace [[oldTitle]] with [[newTitle]]
+          // Replace [[oldTitle|display]] with [[newTitle|display]]
+          content = content.replaceAllMapped(
+            wikiLinkPattern,
+            (match) {
+              final display = match.group(1); // |display part or null
+              return '[[$newTitle${display ?? ''}]]';
+            },
+          );
+          
+          await file.writeAsString(content);
+        }
+      } catch (e) {
+        // Skip files that can't be read/written
+        continue;
       }
     }
   }
