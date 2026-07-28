@@ -1,6 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// AI configuration stored securely.
 class AiConfig {
@@ -32,31 +33,37 @@ class AiConfig {
 /// AI service for LLM integration (FR-AI-001 BYOK).
 ///
 /// Supports OpenAI-compatible endpoints.
-/// API keys are stored in platform secure storage.
+/// Config is stored in a local JSON file in the app support directory.
 class AiService {
-  static const _storageKey = 'mvision_ai_config';
-  final FlutterSecureStorage _secureStorage;
+  static const _configFileName = 'ai_config.json';
   final Dio _dio;
 
   AiConfig? _cachedConfig;
+  File? _configFile;
 
   AiService({
-    FlutterSecureStorage? secureStorage,
     Dio? dio,
-  }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
-       _dio = dio ?? Dio(BaseOptions(
+  }) : _dio = dio ?? Dio(BaseOptions(
          connectTimeout: const Duration(seconds: 15),
          receiveTimeout: const Duration(seconds: 60),
          sendTimeout: const Duration(seconds: 30),
        ));
 
-  /// Load AI config from secure storage.
+  Future<File> _getConfigFile() async {
+    if (_configFile != null) return _configFile!;
+    final dir = await getApplicationSupportDirectory();
+    _configFile = File('${dir.path}/$_configFileName');
+    return _configFile!;
+  }
+
+  /// Load AI config from local file.
   Future<AiConfig?> loadConfig() async {
     if (_cachedConfig != null) return _cachedConfig;
 
     try {
-      final jsonStr = await _secureStorage.read(key: _storageKey);
-      if (jsonStr != null) {
+      final file = await _getConfigFile();
+      if (file.existsSync()) {
+        final jsonStr = file.readAsStringSync();
         _cachedConfig = AiConfig.fromJson(jsonDecode(jsonStr));
         return _cachedConfig;
       }
@@ -66,18 +73,19 @@ class AiService {
     return null;
   }
 
-  /// Save AI config to secure storage.
+  /// Save AI config to local file.
   Future<void> saveConfig(AiConfig config) async {
-    await _secureStorage.write(
-      key: _storageKey,
-      value: jsonEncode(config.toJson()),
-    );
+    final file = await _getConfigFile();
+    file.writeAsStringSync(jsonEncode(config.toJson()));
     _cachedConfig = config;
   }
 
-  /// Delete AI config from secure storage.
+  /// Delete AI config file.
   Future<void> deleteConfig() async {
-    await _secureStorage.delete(key: _storageKey);
+    final file = await _getConfigFile();
+    if (file.existsSync()) {
+      file.deleteSync();
+    }
     _cachedConfig = null;
   }
 
