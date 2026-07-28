@@ -99,6 +99,59 @@ final hasVaultProvider = Provider<bool>((ref) {
 });
 
 // ============================================================
+// Split View (Phase 3)
+// ============================================================
+
+/// Split view state - holds the secondary pane document.
+class SplitViewState {
+  final String? secondaryDocId;
+  final bool isSecondaryEditor;
+  final double splitRatio; // 0.0 - 1.0, portion for primary pane
+
+  const SplitViewState({
+    this.secondaryDocId,
+    this.isSecondaryEditor = false,
+    this.splitRatio = 0.5,
+  });
+
+  bool get isSplit => secondaryDocId != null;
+
+  SplitViewState copyWith({
+    String? secondaryDocId,
+    bool? isSecondaryEditor,
+    double? splitRatio,
+    bool clearSecondary = false,
+  }) {
+    return SplitViewState(
+      secondaryDocId: clearSecondary ? null : (secondaryDocId ?? this.secondaryDocId),
+      isSecondaryEditor: isSecondaryEditor ?? this.isSecondaryEditor,
+      splitRatio: splitRatio ?? this.splitRatio,
+    );
+  }
+}
+
+/// Split view state provider.
+final splitViewProvider = StateNotifierProvider<SplitViewNotifier, SplitViewState>((ref) {
+  return SplitViewNotifier();
+});
+
+class SplitViewNotifier extends StateNotifier<SplitViewState> {
+  SplitViewNotifier() : super(const SplitViewState());
+
+  void openInSplit(String docId, {bool asEditor = false}) {
+    state = state.copyWith(secondaryDocId: docId, isSecondaryEditor: asEditor);
+  }
+
+  void closeSplit() {
+    state = state.copyWith(clearSecondary: true);
+  }
+
+  void setSplitRatio(double ratio) {
+    state = state.copyWith(splitRatio: ratio.clamp(0.25, 0.75));
+  }
+}
+
+// ============================================================
 // File Tree (for File Explorer sidebar)
 // ============================================================
 

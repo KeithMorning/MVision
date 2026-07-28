@@ -165,6 +165,22 @@ class DatabaseService {
         FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
       )
     ''');
+
+    // Note history (version snapshots for rollback)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS note_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        saved_at INTEGER NOT NULL,
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+      )
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_history_doc
+        ON note_history(document_id, saved_at DESC)
+    ''');
   }
 
   // --- Sources ---
@@ -637,6 +653,48 @@ class DatabaseService {
       'SELECT id, title, path FROM documents ORDER BY title',
     );
     return result.map((row) => row).toList();
+  }
+
+  // --- Note History ---
+
+  /// Save a history snapshot for a document.
+  void saveHistorySnapshot(String documentId, String content) {
+    _db.execute(
+      'INSERT INTO note_history (document_id, content, saved_at) VALUES (?, ?, ?)',
+      [documentId, content, DateTime.now().millisecondsSinceEpoch],
+    );
+    // Keep only last 50 snapshots per document
+    _db.execute(
+      '''DELETE FROM note_history WHERE id NOT IN (
+        SELECT id FROM note_history
+        WHERE document_id = ?
+        ORDER BY saved_at DESC
+        LIMIT 50
+      ) AND document_id = ?''',
+      [documentId, documentId],
+    );
+  }
+
+  /// Get history snapshots for a document (newest first).
+  List<Map<String, dynamic>> getHistorySnapshots(String documentId, {int limit = 20}) {
+    final result = _db.select(
+      '''SELECT id, content, saved_at FROM note_history
+         WHERE document_id = ?
+         ORDER BY saved_at DESC
+         LIMIT ?''',
+      [documentId, limit],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  /// Get a specific history snapshot by ID.
+  Map<String, dynamic>? getHistorySnapshot(int snapshotId) {
+    final result = _db.select(
+      'SELECT * FROM note_history WHERE id = ?',
+      [snapshotId],
+    );
+    if (result.isEmpty) return null;
+    return result.first;
   }
 
   void close() {

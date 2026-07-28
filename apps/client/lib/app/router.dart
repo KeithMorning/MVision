@@ -12,6 +12,28 @@ import '../desktop/pages/editor_page.dart';
 import '../desktop/pages/wiki_page.dart';
 import '../desktop/pages/qa_page.dart';
 import '../desktop/desktop_shell.dart';
+import '../mobile/mobile_shell.dart';
+
+/// Responsive shell that picks Desktop or Mobile layout.
+class ResponsiveShell extends StatelessWidget {
+  const ResponsiveShell({super.key, required this.child});
+
+  final Widget child;
+
+  static const double _mobileBreakpoint = 768;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < _mobileBreakpoint) {
+          return MobileShell(child: child);
+        }
+        return DesktopShell(child: child);
+      },
+    );
+  }
+}
 
 /// Custom fade transition page.
 class FadeTransitionPage extends CustomTransitionPage<void> {
@@ -30,7 +52,7 @@ final appRouter = GoRouter(
   initialLocation: '/home',
   routes: [
     ShellRoute(
-      builder: (context, state, child) => DesktopShell(child: child),
+      builder: (context, state, child) => ResponsiveShell(child: child),
       routes: [
         GoRoute(
           path: '/home',

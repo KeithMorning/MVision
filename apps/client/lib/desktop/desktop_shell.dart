@@ -6,9 +6,13 @@ import 'package:design_system/design_system.dart';
 
 import '../app/providers.dart';
 import '../shared/platform_keys.dart';
+import '../shared/responsive.dart';
+import '../shared/animations.dart';
 import 'widgets/file_explorer.dart';
 import 'widgets/quick_switcher.dart';
 import 'widgets/command_palette.dart';
+import 'pages/reader_page.dart';
+import 'pages/editor_page.dart';
 
 /// Desktop shell with Obsidian-like layout:
 /// File Explorer (left) | Content (center) | Inspector (right, optional)
@@ -68,12 +72,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           children: [
             // Left sidebar: File Explorer
             AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              width: _showSidebar ? AppContentWidth.sidebar : 0,
+              duration: AppAnimations.normal,
+              curve: AppAnimations.defaultCurve,
+              width: _showSidebar ? context.adaptiveSidebarWidth : 0,
               child: _showSidebar
                   ? Container(
-                      width: AppContentWidth.sidebar,
+                      width: context.adaptiveSidebarWidth,
                       decoration: BoxDecoration(
                         color: isDark ? AppColors.surfaceDark : AppColors.surface,
                         border: Border(
@@ -96,10 +100,140 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                     )
                   : null,
             ),
-            // Content area
-            Expanded(child: widget.child),
+            // Content area (with optional split view)
+            Expanded(child: _buildContentArea(isDark)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildContentArea(bool isDark) {
+    final splitState = ref.watch(splitViewProvider);
+
+    if (!splitState.isSplit) {
+      return widget.child;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalWidth = constraints.maxWidth;
+        final primaryWidth = totalWidth * splitState.splitRatio;
+        final secondaryWidth = totalWidth * (1 - splitState.splitRatio);
+
+        return Row(
+          children: [
+            // Primary pane
+            SizedBox(width: primaryWidth, child: widget.child),
+            // Draggable divider
+            GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                final newRatio = (primaryWidth + details.delta.dx) / totalWidth;
+                ref.read(splitViewProvider.notifier).setSplitRatio(newRatio);
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: Container(
+                  width: 4,
+                  color: isDark ? AppColors.borderDark : AppColors.border,
+                ),
+              ),
+            ),
+            // Secondary pane
+            SizedBox(
+              width: secondaryWidth - 4,
+              child: _SecondaryPane(
+                docId: splitState.secondaryDocId!,
+                isEditor: splitState.isSecondaryEditor,
+                isDark: isDark,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Secondary pane for split view.
+class _SecondaryPane extends ConsumerWidget {
+  const _SecondaryPane({
+    required this.docId,
+    required this.isEditor,
+    required this.isDark,
+  });
+
+  final String docId;
+  final bool isEditor;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: isDark ? AppColors.borderDark : AppColors.border,
+          ),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Secondary pane header
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.xs,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.surfaceVariantDark : AppColors.surfaceVariant,
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? AppColors.borderDark : AppColors.border,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isEditor ? Icons.edit_rounded : Icons.visibility_rounded,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    isEditor ? '编辑' : '预览',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () {
+                    ref.read(splitViewProvider.notifier).closeSplit();
+                  },
+                  borderRadius: BorderRadius.circular(AppRadius.button),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 14,
+                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Content
+          Expanded(
+            child: isEditor
+                ? EditorPage(documentId: docId, key: ValueKey('split_editor_$docId'))
+                : ReaderPage(documentId: docId, key: ValueKey('split_reader_$docId')),
+          ),
+        ],
       ),
     );
   }

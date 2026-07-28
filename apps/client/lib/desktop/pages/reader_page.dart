@@ -181,6 +181,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             tooltip: '编辑',
             onPressed: () => context.push('/editor/${widget.documentId}'),
           ),
+          // Split view button
+          IconButton(
+            icon: const Icon(Icons.vertical_split_rounded),
+            tooltip: '分屏打开',
+            onPressed: () {
+              ref.read(splitViewProvider.notifier).openInSplit(widget.documentId);
+            },
+          ),
           // Reveal in Finder
           IconButton(
             icon: const Icon(Icons.folder_open_rounded),

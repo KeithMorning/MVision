@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../../app/providers.dart';
 import '../../shared/platform_keys.dart';
 import '../widgets/markdown_highlight_controller.dart';
+import '../widgets/note_history_dialog.dart';
 
 /// View mode for the editor.
 enum EditorViewMode { edit, preview, split }
@@ -402,6 +403,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       if (!parentDir.existsSync()) {
         parentDir.createSync(recursive: true);
       }
+
+      // Save history snapshot (previous content) before overwriting
+      if (file.existsSync() && widget.documentId.isNotEmpty) {
+        final previousContent = file.readAsStringSync();
+        if (previousContent.isNotEmpty && previousContent != _controller.text) {
+          final db = ref.read(databaseProvider);
+          db.saveHistorySnapshot(widget.documentId, previousContent);
+        }
+      }
+
       // Atomic write: temp file + rename
       final tempPath = '$_filePath.tmp';
       await File(tempPath).writeAsString(_controller.text);
@@ -492,6 +503,19 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             icon: const Icon(Icons.redo_rounded),
             onPressed: _redoStack.isNotEmpty ? _redo : null,
             tooltip: '重做',
+          ),
+          // History button
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: '编辑历史',
+            onPressed: () async {
+              final restored = await NoteHistoryDialog.show(context, widget.documentId);
+              if (restored != null && mounted) {
+                _pushUndo();
+                _controller.text = restored;
+                setState(() => _isDirty = true);
+              }
+            },
           ),
           const SizedBox(width: AppSpacing.sm),
           // Edit/Preview/Split toggle
