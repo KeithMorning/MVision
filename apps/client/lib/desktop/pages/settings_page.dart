@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
 
-/// Settings page - data sources, AI config, appearance, sync.
+/// Settings page - vault config, appearance, sync.
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
@@ -14,7 +13,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final sources = ref.watch(sourcesProvider);
+    final vault = ref.watch(vaultProvider);
 
     return Scaffold(
       backgroundColor:
@@ -29,79 +28,57 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xxl),
-          // Data sources section
-          _SectionHeader(title: '数据源'),
+          // Vault section
+          _SectionHeader(title: '知识库'),
           const SizedBox(height: AppSpacing.md),
-          // Add source button
+          // Open vault button
           FilledButton.icon(
-            onPressed: () => _addLocalSource(context, ref),
-            icon: const Icon(Icons.create_new_folder_rounded, size: 18),
-            label: const Text('添加本地目录'),
+            onPressed: () => _openVault(context, ref),
+            icon: const Icon(Icons.folder_open_rounded, size: 18),
+            label: Text(vault != null ? '切换知识库' : '打开知识库'),
           ),
           const SizedBox(height: AppSpacing.md),
-          // Connected sources
-          if (sources.isEmpty)
+          // Current vault info
+          if (vault != null)
+            Card(
+              margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: ListTile(
+                leading: const Icon(Icons.auto_stories_rounded),
+                title: Text(vault.name),
+                subtitle: Text(
+                  vault.rootPath,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      tooltip: '扫描',
+                      onPressed: () => scanVault(ref),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Text(
-                '尚未连接任何知识源',
+                '尚未打开知识库',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: isDark
                       ? AppColors.textSecondaryDark
                       : AppColors.textSecondary,
                 ),
               ),
-            )
-          else
-            ...sources.map((source) => Card(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: ListTile(
-                    leading: const Icon(Icons.folder_rounded),
-                    title: Text(source.name),
-                    subtitle: Text(
-                      source.rootPath,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.refresh_rounded, size: 20),
-                          tooltip: '扫描',
-                          onPressed: () => scanSource(
-                            ref,
-                            sourceId: source.id,
-                            rootPath: source.rootPath,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                          tooltip: '移除',
-                          onPressed: () {
-                            ref.read(sourcesProvider.notifier).removeSource(source.id);
-                            ref.read(documentsProvider.notifier).refresh();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                )),
+            ),
           const SizedBox(height: AppSpacing.xxl),
           // Baidu Netdisk section
           _SectionHeader(title: '百度网盘'),
           const SizedBox(height: AppSpacing.md),
           _BaiduSection(isDark: isDark),
-          const SizedBox(height: AppSpacing.xxl),
-          // AI section
-          _SectionHeader(title: 'AI'),
-          const SizedBox(height: AppSpacing.md),
-          _SettingTile(
-            icon: Icons.key_rounded,
-            title: '模型配置',
-            subtitle: 'BYOK - 自带密钥',
-            onTap: () {},
-          ),
           const SizedBox(height: AppSpacing.xxl),
           // Appearance section
           _SectionHeader(title: '外观'),
@@ -127,17 +104,15 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _addLocalSource(BuildContext context, WidgetRef ref) async {
+  Future<void> _openVault(BuildContext context, WidgetRef ref) async {
     final result = await FilePicker.platform.getDirectoryPath(
       dialogTitle: '选择知识库目录',
     );
     if (result != null) {
-      await ref.read(sourcesProvider.notifier).addLocalSource(result);
-      // Auto-scan after adding
-      final sources = ref.read(sourcesProvider);
-      final source = sources.firstWhere((s) => s.rootPath == result);
+      ref.read(vaultProvider.notifier).openVault(result);
+      // Auto-scan after opening
       if (context.mounted) {
-        scanSource(ref, sourceId: source.id, rootPath: result);
+        scanVault(ref);
       }
     }
   }
@@ -213,7 +188,7 @@ class _SettingTile extends StatelessWidget {
   }
 }
 
-/// Baidu Netdisk connection section.
+/// Baidu Netdisk connection section (BDUSS cookie auth - Phase 2).
 class _BaiduSection extends StatefulWidget {
   const _BaiduSection({required this.isDark});
   final bool isDark;
@@ -223,58 +198,32 @@ class _BaiduSection extends StatefulWidget {
 }
 
 class _BaiduSectionState extends State<_BaiduSection> {
-  final _codeController = TextEditingController();
-  bool _showCodeInput = false;
+  final _bdussController = TextEditingController();
+  final _stokenController = TextEditingController();
   String? _status;
   bool _isSuccess = false;
 
-  // TODO: Move to secure config. For now, user must register at
-  // https://pan.baidu.com/union/doc/pksg0s9ns
-  static const _clientId = 'YOUR_BAIDU_APP_KEY';
-  static const _clientSecret = 'YOUR_BAIDU_SECRET_KEY';
-  static const _redirectUri = 'http://localhost:8080/callback';
-
   @override
   void dispose() {
-    _codeController.dispose();
+    _bdussController.dispose();
+    _stokenController.dispose();
     super.dispose();
   }
 
-  Future<void> _openAuthPage() async {
-    final authUrl = 'https://openapi.baidu.com/oauth/2.0/authorize'
-        '?response_type=code'
-        '&client_id=$_clientId'
-        '&redirect_uri=${Uri.encodeComponent(_redirectUri)}'
-        '&scope=basic,netdisk'
-        '&display=popup';
-
-    final uri = Uri.parse(authUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      setState(() => _showCodeInput = true);
-    } else {
-      setState(() {
-        _status = '无法打开浏览器';
-        _isSuccess = false;
-      });
-    }
-  }
-
   void _onConnect() {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) {
+    final bduss = _bdussController.text.trim();
+    if (bduss.isEmpty) {
       setState(() {
-        _status = '请输入授权码';
+        _status = '请输入 BDUSS';
         _isSuccess = false;
       });
       return;
     }
 
-    // TODO: Exchange code for token via BaiduOAuth service
+    // TODO: Validate BDUSS by calling pan.baidu.com API
     setState(() {
-      _status = '授权码已收到，百度网盘连接器将在后续版本中完整集成';
+      _status = 'BDUSS 已保存，百度网盘同步将在 Phase 2 中完整实现';
       _isSuccess = true;
-      _showCodeInput = false;
     });
   }
 
@@ -304,8 +253,8 @@ class _BaiduSectionState extends State<_BaiduSection> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '连接百度网盘后，可以同步远端 Markdown 文件到本地阅读。\n'
-              '需要先在百度开放平台注册应用获取 AppKey。',
+              '使用 BDUSS Cookie 认证（类似 BaiduPCS-Go）。\n'
+              '登录 pan.baidu.com → F12 → Application → Cookies → 复制 BDUSS',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: widget.isDark
                     ? AppColors.textSecondaryDark
@@ -326,33 +275,30 @@ class _BaiduSectionState extends State<_BaiduSection> {
                 ),
                 child: Text(_status!, style: theme.textTheme.bodySmall),
               ),
-            if (_showCodeInput) ...[
-              TextField(
-                controller: _codeController,
-                decoration: const InputDecoration(
-                  labelText: '授权码',
-                  hintText: '从浏览器回调 URL 中复制 code 参数',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+            TextField(
+              controller: _bdussController,
+              decoration: const InputDecoration(
+                labelText: 'BDUSS',
+                hintText: '从浏览器 Cookies 中复制 BDUSS 值',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _openAuthPage,
-                  icon: const Icon(Icons.open_in_browser_rounded, size: 18),
-                  label: const Text('打开授权页面'),
-                ),
-                if (_showCodeInput) ...[
-                  const SizedBox(width: AppSpacing.md),
-                  FilledButton(
-                    onPressed: _onConnect,
-                    child: const Text('连接'),
-                  ),
-                ],
-              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _stokenController,
+              decoration: const InputDecoration(
+                labelText: 'STOKEN (可选)',
+                hintText: '从浏览器 Cookies 中复制 STOKEN 值',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            FilledButton.icon(
+              onPressed: _onConnect,
+              icon: const Icon(Icons.link_rounded, size: 18),
+              label: const Text('连接'),
             ),
           ],
         ),

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'database_service.dart';
 
 /// Scans a local directory for Markdown files and indexes them.
+/// Also parses links (wiki links, markdown links) and tags.
 class ScannerService {
   final DatabaseService db;
 
@@ -19,11 +20,37 @@ class ScannerService {
   static const _ignoredDirs = {
     '.git', '.svn', '.hg',
     'node_modules', '.dart_tool', '.build',
-    '.mvision', '__pycache__', '.Trash',
+    '.mvision', '__pycache__', '.Trash', '.obsidian',
   };
 
   /// Scan progress callback.
   void Function(int processed, int total)? onProgress;
+
+  // Regex patterns for parsing
+  static final _wikiLinkPattern = RegExp(
+    r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]',
+    multiLine: true,
+  );
+
+  static final _markdownLinkPattern = RegExp(
+    r'\[([^\]]+)\]\(([^)]+\.md(?:#[^)]*)?)\)',
+    multiLine: true,
+  );
+
+  static final _inlineTagPattern = RegExp(
+    r'(?:^|\s)#([a-zA-Z\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_/-]*)',
+    multiLine: true,
+  );
+
+  static final _frontmatterTagsPattern = RegExp(
+    r'^tags:\s*\[([^\]]+)\]',
+    multiLine: true,
+  );
+
+  static final _frontmatterTagsListPattern = RegExp(
+    r'^tags:\s*\n((?:\s+-\s+.+\n?)+)',
+    multiLine: true,
+  );
 
   /// Scan a source directory and index all Markdown files.
   ///
@@ -76,6 +103,12 @@ class ScannerService {
           title: title,
           body: content,
         );
+
+        // Parse and store links
+        _parseAndStoreLinks(docId, content);
+
+        // Parse and store tags
+        _parseAndStoreTags(docId, content);
 
         updated++;
       } catch (e) {
@@ -138,5 +171,127 @@ class ScannerService {
   String _generateDocId(String sourceId, String relativePath) {
     final input = '$sourceId:$relativePath';
     return sha256.convert(utf8.encode(input)).toString().substring(0, 16);
+  }
+
+  /// Parse wiki links and markdown links, store in DB.
+  void _parseAndStoreLinks(String docId, String content) {
+    db.clearLinksForDocument(docId);
+
+    // Remove code blocks before parsing links
+    final cleanContent = _removeCodeBlocks(content);
+
+    // Parse [[wiki links]]
+    for (final match in _wikiLinkPattern.allMatches(cleanContent)) {
+      final target = match.group(1)!.trim();
+      final context = _extractContext(cleanContent, match.start);
+
+      // Try to resolve target to a document
+      final targetDoc = db.findDocumentByTitle(target);
+      if (targetDoc != null) {
+        db.insertLink(
+          sourceDocId: docId,
+          targetDocId: targetDoc['id'] as String,
+          linkText: target,
+          linkType: 'wiki',
+          context: context,
+        );
+      }
+    }
+
+    // Parse [text](path.md) markdown links
+    for (final match in _markdownLinkPattern.allMatches(cleanContent)) {
+      final linkPath = match.group(2)!.trim();
+      final context = _extractContext(cleanContent, match.start);
+
+      // Resolve relative path to document
+      final targetDoc = _resolveMarkdownLink(linkPath);
+      if (targetDoc != null) {
+        db.insertLink(
+          sourceDocId: docId,
+          targetDocId: targetDoc['id'] as String,
+          linkText: match.group(1)!.trim(),
+          linkType: 'markdown',
+          context: context,
+        );
+      }
+    }
+  }
+
+  /// Parse tags from content and frontmatter, store in DB.
+  void _parseAndStoreTags(String docId, String content) {
+    db.clearTagsForDocument(docId);
+    final tags = <String>{};
+
+    // Parse YAML frontmatter tags
+    if (content.startsWith('---')) {
+      final endIdx = content.indexOf('---', 3);
+      if (endIdx > 0) {
+        final frontmatter = content.substring(3, endIdx);
+
+        // tags: [tag1, tag2]
+        final inlineMatch = _frontmatterTagsPattern.firstMatch(frontmatter);
+        if (inlineMatch != null) {
+          final tagList = inlineMatch.group(1)!;
+          for (final tag in tagList.split(',')) {
+            final cleaned = tag.trim().replaceAll(RegExp(r'''^["']|["']$'''), '');
+            if (cleaned.isNotEmpty) tags.add(cleaned);
+          }
+        }
+
+        // tags:\n  - tag1\n  - tag2
+        final listMatch = _frontmatterTagsListPattern.firstMatch(frontmatter);
+        if (listMatch != null) {
+          final lines = listMatch.group(1)!.split('\n');
+          for (final line in lines) {
+            final cleaned = line.trim().replaceFirst(RegExp(r'^-\s+'), '');
+            if (cleaned.isNotEmpty) tags.add(cleaned);
+          }
+        }
+      }
+    }
+
+    // Parse inline #tags (outside code blocks)
+    final cleanContent = _removeCodeBlocks(content);
+    for (final match in _inlineTagPattern.allMatches(cleanContent)) {
+      final tag = match.group(1)!.trim();
+      if (tag.isNotEmpty && tag.length > 1) {
+        tags.add(tag);
+      }
+    }
+
+    // Store tags
+    for (final tag in tags) {
+      final tagId = db.getOrCreateTag(tag);
+      db.addTagToDocument(docId, tagId);
+    }
+  }
+
+  /// Remove code blocks from content to avoid parsing links/tags inside them.
+  String _removeCodeBlocks(String content) {
+    return content.replaceAll(RegExp(r'```[\s\S]*?```', multiLine: true), '');
+  }
+
+  /// Extract surrounding context for a link (for backlink previews).
+  String _extractContext(String content, int position) {
+    final start = (position - 40).clamp(0, content.length);
+    final end = (position + 80).clamp(0, content.length);
+    var context = content.substring(start, end).replaceAll('\n', ' ').trim();
+    if (start > 0) context = '...$context';
+    if (end < content.length) context = '$context...';
+    return context;
+  }
+
+  /// Resolve a markdown link path to a document.
+  Map<String, dynamic>? _resolveMarkdownLink(String linkPath) {
+    // Remove anchor
+    final path = linkPath.split('#').first;
+    if (path.isEmpty) return null;
+
+    // Try to find by path suffix
+    final docs = db.getAllDocumentTitles();
+    return docs.where((d) {
+      final docPath = d['path'] as String;
+      return docPath.endsWith(path) || docPath == path;
+    }).firstOrNull;
   }
 }

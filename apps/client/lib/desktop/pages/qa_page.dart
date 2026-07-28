@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
-import '../../services/ai_service.dart';
 import 'ai_page.dart';
 
 /// Knowledge Q&A page - ask questions about your knowledge base.

@@ -14,7 +14,7 @@ class LibraryPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final documents = ref.watch(documentsProvider);
-    final sources = ref.watch(sourcesProvider);
+    final vault = ref.watch(vaultProvider);
     final scanState = ref.watch(scanStateProvider);
 
     return Scaffold(
@@ -42,7 +42,9 @@ class LibraryPage extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '${documents.length} 个文档 · ${sources.length} 个知识源',
+                        vault != null
+                            ? '${documents.length} 个笔记 · ${vault.name}'
+                            : '${documents.length} 个笔记',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: isDark
                               ? AppColors.textSecondaryDark
@@ -53,18 +55,11 @@ class LibraryPage extends ConsumerWidget {
                   ),
                 ),
                 // Scan button
-                if (sources.isNotEmpty)
+                if (vault != null)
                   FilledButton.icon(
                     onPressed: scanState.isScanning
                         ? null
-                        : () {
-                            final source = sources.first;
-                            scanSource(
-                              ref,
-                              sourceId: source.id,
-                              rootPath: source.rootPath,
-                            );
-                          },
+                        : () => scanVault(ref),
                     icon: scanState.isScanning
                         ? const SizedBox(
                             width: 16,
@@ -115,7 +110,7 @@ class LibraryPage extends ConsumerWidget {
           // Document list
           Expanded(
             child: documents.isEmpty
-                ? _EmptyState(isDark: isDark)
+                ? _EmptyState(isDark: isDark, hasVault: vault != null)
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xxl,
@@ -232,9 +227,10 @@ class _DocumentTile extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.isDark});
+  const _EmptyState({required this.isDark, required this.hasVault});
 
   final bool isDark;
+  final bool hasVault;
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +249,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            '知识库为空',
+            hasVault ? '知识库为空' : '未打开知识库',
             style: theme.textTheme.titleMedium?.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark
@@ -262,7 +258,9 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '在设置中添加知识源，然后扫描目录',
+            hasVault
+                ? '扫描知识库以索引文档'
+                : '在设置中打开一个知识库目录',
             style: theme.textTheme.bodySmall?.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark

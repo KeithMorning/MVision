@@ -16,9 +16,10 @@ import '../../shared/platform_keys.dart';
 
 /// Markdown editor page with edit/preview toggle and autosave.
 class EditorPage extends ConsumerStatefulWidget {
-  const EditorPage({super.key, required this.documentId});
+  const EditorPage({super.key, required this.documentId, this.filePath});
 
   final String documentId;
+  final String? filePath;
 
   @override
   ConsumerState<EditorPage> createState() => _EditorPageState();
@@ -67,6 +68,23 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   }
 
   void _loadDocument() {
+    // If opened by direct file path (from file explorer)
+    if (widget.filePath != null && widget.filePath!.isNotEmpty) {
+      final vault = ref.read(vaultProvider);
+      if (vault == null) return;
+      _filePath = p.join(vault.rootPath, widget.filePath!);
+      _title = p.basenameWithoutExtension(widget.filePath!);
+      try {
+        final file = File(_filePath);
+        if (file.existsSync()) {
+          _controller.text = file.readAsStringSync();
+        }
+      } catch (e) {
+        _controller.text = '';
+      }
+      return;
+    }
+
     final db = ref.read(databaseProvider);
     final doc = db.getDocument(widget.documentId);
     if (doc == null) return;
@@ -193,19 +211,17 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
     try {
       final file = File(_filePath);
+      // Ensure parent directory exists (for new notes)
+      final parentDir = file.parent;
+      if (!parentDir.existsSync()) {
+        parentDir.createSync(recursive: true);
+      }
       // Atomic write: temp file + rename
       final tempPath = '$_filePath.tmp';
       await File(tempPath).writeAsString(_controller.text);
       await File(tempPath).rename(_filePath);
 
-      // Update database hash
-      final db = ref.read(databaseProvider);
-      final doc = db.getDocument(widget.documentId);
-      if (doc != null) {
-        final sourceId = doc['source_id'] as String;
-        final path = doc['path'] as String;
-        // Re-index will happen on next scan
-      }
+      // Re-index will happen on next scan
 
       setState(() {
         _isDirty = false;
@@ -213,6 +229,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       });
       // Clear recovery file after successful save
       _clearRecoveryFile();
+      // Refresh file tree to show new note
+      ref.read(fileTreeProvider.notifier).refresh();
     } catch (e) {
       setState(() => _isSaving = false);
       if (mounted) {

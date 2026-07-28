@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 import 'package:path/path.dart' as p;
-import 'package:markdown/markdown.dart' as md;
 
 import '../../app/providers.dart';
+import '../widgets/backlinks_panel.dart';
+import '../widgets/tag_panel.dart';
 
 /// Markdown reader page with TOC and Wiki Link support.
 class ReaderPage extends ConsumerStatefulWidget {
@@ -29,6 +30,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   String _fullPath = '';
   List<_TocItem> _toc = [];
   bool _showToc = true;
+  bool _showBacklinks = false;
 
   @override
   void initState() {
@@ -135,6 +137,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          // Backlinks toggle
+          IconButton(
+            icon: Icon(
+              _showBacklinks ? Icons.link_rounded : Icons.link_outlined,
+              color: _showBacklinks ? AppColors.primary : null,
+            ),
+            tooltip: '反向链接',
+            onPressed: () => setState(() => _showBacklinks = !_showBacklinks),
+          ),
           // TOC toggle
           if (_toc.isNotEmpty)
             IconButton(
@@ -205,40 +216,57 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                 constraints: const BoxConstraints(
                   maxWidth: AppContentWidth.reading,
                 ),
-                child: Markdown(
-                  key: _markdownKey,
-                  controller: _scrollController,
-                  data: _processWikiLinks(_content),
-                  padding: const EdgeInsets.all(AppSpacing.xxl),
-                  styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                    p: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
-                    h1: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                child: Column(
+                  children: [
+                    // Tag chips header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xxl, AppSpacing.lg, AppSpacing.xxl, 0,
+                      ),
+                      child: TagChips(documentId: widget.documentId),
                     ),
-                    h2: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    // Markdown content
+                    Expanded(
+                      child: Markdown(
+                        key: _markdownKey,
+                        controller: _scrollController,
+                        data: _processWikiLinks(_content),
+                        padding: const EdgeInsets.all(AppSpacing.xxl),
+                        styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                          p: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
+                          h1: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          h2: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          h3: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          code: theme.textTheme.bodyMedium?.copyWith(
+                            fontFamily: 'monospace',
+                            backgroundColor: isDark
+                                ? AppColors.surfaceVariantDark
+                                : AppColors.surfaceVariant,
+                          ),
+                        ),
+                        onTapLink: (text, href, title) {
+                          // Handle Wiki Links
+                          if (href != null && href.startsWith('wiki://')) {
+                            final linkTarget = href.replaceFirst('wiki://', '');
+                            _navigateToWikiLink(linkTarget);
+                          }
+                        },
+                      ),
                     ),
-                    h3: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    code: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace',
-                      backgroundColor: isDark
-                          ? AppColors.surfaceVariantDark
-                          : AppColors.surfaceVariant,
-                    ),
-                  ),
-                  onTapLink: (text, href, title) {
-                    // Handle Wiki Links
-                    if (href != null && href.startsWith('wiki://')) {
-                      final linkTarget = href.replaceFirst('wiki://', '');
-                      _navigateToWikiLink(linkTarget);
-                    }
-                  },
+                  ],
                 ),
               ),
             ),
           ),
+          // Backlinks panel (right side)
+          if (_showBacklinks)
+            BacklinksPanel(documentId: widget.documentId),
         ],
       ),
     );

@@ -6,9 +6,9 @@ import 'package:design_system/design_system.dart';
 import '../../app/providers.dart';
 import '../../shared/onboarding.dart';
 
-/// Home page - knowledge library dashboard.
+/// Home page - vault dashboard.
 ///
-/// Shows: connected sources, recent documents, quick actions.
+/// Shows: vault status, recent documents, quick actions.
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -17,16 +17,16 @@ class HomePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final documents = ref.watch(documentsProvider);
-    final sources = ref.watch(sourcesProvider);
+    final vault = ref.watch(vaultProvider);
 
-    // Show onboarding when no sources connected
-    if (sources.isEmpty) {
+    // Show onboarding when no vault is open
+    if (vault == null) {
       return Scaffold(
         backgroundColor:
             isDark ? AppColors.backgroundDark : AppColors.background,
         body: OnboardingGuide(
           onAddSource: () => context.go('/settings'),
-          onConfigureAi: () => context.go('/ai'),
+          onConfigureAi: () => context.go('/settings'),
         ),
       );
     }
@@ -46,14 +46,14 @@ class HomePage extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '首页',
+                    vault.name,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    '${sources.length} 个知识源 · ${documents.length} 个文档',
+                    '${documents.length} 个笔记',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: isDark
                           ? AppColors.textSecondaryDark
@@ -73,11 +73,11 @@ class HomePage extends ConsumerWidget {
                 runSpacing: AppSpacing.md,
                 children: [
                   _QuickActionCard(
-                    icon: Icons.create_new_folder_rounded,
-                    title: '添加知识源',
-                    subtitle: '连接本地目录',
+                    icon: Icons.note_add_rounded,
+                    title: '新建笔记',
+                    subtitle: '⌘N',
                     color: AppColors.primary,
-                    onTap: () => context.go('/settings'),
+                    onTap: () => context.push('/editor/path?path=Untitled.md'),
                   ),
                   _QuickActionCard(
                     icon: Icons.library_books_rounded,
@@ -87,11 +87,11 @@ class HomePage extends ConsumerWidget {
                     onTap: () => context.go('/library'),
                   ),
                   _QuickActionCard(
-                    icon: Icons.auto_awesome_rounded,
-                    title: '配置 AI',
-                    subtitle: '启用 Wiki 编译',
-                    color: AppColors.aiIndicator,
-                    onTap: () => context.go('/ai'),
+                    icon: Icons.settings_rounded,
+                    title: '设置',
+                    subtitle: '⌘,',
+                    color: AppColors.textSecondary,
+                    onTap: () => context.go('/settings'),
                   ),
                 ],
               ),
@@ -136,7 +136,7 @@ class HomePage extends ConsumerWidget {
               ),
             ),
           ] else ...[
-            // Empty documents state (sources exist but no docs yet)
+            // Empty documents state (vault exists but no docs yet)
             SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
@@ -152,7 +152,7 @@ class HomePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     Text(
-                      '知识源已连接，等待扫描',
+                      '知识库已打开，等待扫描',
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -161,7 +161,7 @@ class HomePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      '在设置中触发扫描以索引文档',
+                      '扫描以索引文档和链接',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -170,9 +170,9 @@ class HomePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     FilledButton.icon(
-                      onPressed: () => context.go('/settings'),
+                      onPressed: () => scanVault(ref),
                       icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('去扫描'),
+                      label: const Text('扫描知识库'),
                     ),
                   ],
                 ),

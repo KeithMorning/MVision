@@ -17,6 +17,19 @@ class DatabaseService {
     _db.execute('PRAGMA journal_mode = WAL');
     _db.execute('PRAGMA foreign_keys = ON');
 
+    // Vault configuration (single vault model, like Obsidian)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS vault_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        name TEXT NOT NULL DEFAULT 'My Vault',
+        root_path TEXT NOT NULL,
+        daily_notes_folder TEXT NOT NULL DEFAULT 'daily',
+        templates_folder TEXT NOT NULL DEFAULT 'templates',
+        created_at INTEGER NOT NULL,
+        last_opened_at INTEGER
+      )
+    ''');
+
     _db.execute('''
       CREATE TABLE IF NOT EXISTS sources (
         id TEXT PRIMARY KEY,
@@ -90,6 +103,66 @@ class DatabaseService {
         detected_at INTEGER NOT NULL,
         resolved INTEGER NOT NULL DEFAULT 0,
         resolution TEXT
+      )
+    ''');
+
+    // Links between documents (backlinks, outgoing links)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS links (
+        source_doc_id TEXT NOT NULL,
+        target_doc_id TEXT NOT NULL,
+        link_text TEXT NOT NULL DEFAULT '',
+        link_type TEXT NOT NULL DEFAULT 'wiki',
+        context TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (source_doc_id, target_doc_id, link_text),
+        FOREIGN KEY (source_doc_id) REFERENCES documents(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_doc_id) REFERENCES documents(id) ON DELETE CASCADE
+      )
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_links_target
+        ON links(target_doc_id)
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_links_source
+        ON links(source_doc_id)
+    ''');
+
+    // Tags
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE
+      )
+    ''');
+
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS document_tags (
+        document_id TEXT NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (document_id, tag_id),
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Starred / favorites
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS starred (
+        document_id TEXT PRIMARY KEY,
+        starred_at INTEGER NOT NULL,
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Recent files (for quick switcher)
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS recent_files (
+        document_id TEXT PRIMARY KEY,
+        opened_at INTEGER NOT NULL,
+        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
       )
     ''');
   }
@@ -308,6 +381,230 @@ class DatabaseService {
       'SELECT COUNT(*) as count FROM sync_conflicts WHERE resolved = 0',
     );
     return result.first['count'] as int;
+  }
+
+  // --- Vault Config ---
+
+  void setVaultConfig({
+    required String name,
+    required String rootPath,
+    String dailyNotesFolder = 'daily',
+    String templatesFolder = 'templates',
+  }) {
+    _db.execute(
+      '''INSERT OR REPLACE INTO vault_config
+         (id, name, root_path, daily_notes_folder, templates_folder, created_at, last_opened_at)
+         VALUES (1, ?, ?, ?, ?, COALESCE((SELECT created_at FROM vault_config WHERE id = 1), ?), ?)''',
+      [name, rootPath, dailyNotesFolder, templatesFolder,
+       DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  Map<String, dynamic>? getVaultConfig() {
+    final result = _db.select('SELECT * FROM vault_config WHERE id = 1');
+    if (result.isEmpty) return null;
+    return result.first;
+  }
+
+  void updateVaultLastOpened() {
+    _db.execute(
+      'UPDATE vault_config SET last_opened_at = ? WHERE id = 1',
+      [DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  // --- Links ---
+
+  void clearLinksForDocument(String docId) {
+    _db.execute('DELETE FROM links WHERE source_doc_id = ?', [docId]);
+  }
+
+  void insertLink({
+    required String sourceDocId,
+    required String targetDocId,
+    required String linkText,
+    required String linkType,
+    required String context,
+  }) {
+    _db.execute(
+      '''INSERT OR REPLACE INTO links (source_doc_id, target_doc_id, link_text, link_type, context)
+         VALUES (?, ?, ?, ?, ?)''',
+      [sourceDocId, targetDocId, linkText, linkType, context],
+    );
+  }
+
+  /// Get backlinks for a document (documents that link TO this doc).
+  List<Map<String, dynamic>> getBacklinks(String docId) {
+    final result = _db.select(
+      '''SELECT l.*, d.title as source_title, d.path as source_path
+         FROM links l
+         JOIN documents d ON d.id = l.source_doc_id
+         WHERE l.target_doc_id = ?
+         ORDER BY d.title''',
+      [docId],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  /// Get outgoing links from a document.
+  List<Map<String, dynamic>> getOutgoingLinks(String docId) {
+    final result = _db.select(
+      '''SELECT l.*, d.title as target_title, d.path as target_path
+         FROM links l
+         JOIN documents d ON d.id = l.target_doc_id
+         WHERE l.source_doc_id = ?
+         ORDER BY d.title''',
+      [docId],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  int getBacklinkCount(String docId) {
+    final result = _db.select(
+      'SELECT COUNT(*) as count FROM links WHERE target_doc_id = ?',
+      [docId],
+    );
+    return result.first['count'] as int;
+  }
+
+  // --- Tags ---
+
+  int getOrCreateTag(String name) {
+    final normalized = name.toLowerCase().trim();
+    final existing = _db.select('SELECT id FROM tags WHERE name = ?', [normalized]);
+    if (existing.isNotEmpty) return existing.first['id'] as int;
+    _db.execute('INSERT INTO tags (name) VALUES (?)', [normalized]);
+    return _db.lastInsertRowId;
+  }
+
+  void clearTagsForDocument(String docId) {
+    _db.execute('DELETE FROM document_tags WHERE document_id = ?', [docId]);
+  }
+
+  void addTagToDocument(String docId, int tagId) {
+    _db.execute(
+      'INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)',
+      [docId, tagId],
+    );
+  }
+
+  List<Map<String, dynamic>> getAllTags() {
+    final result = _db.select(
+      '''SELECT t.id, t.name, COUNT(dt.document_id) as doc_count
+         FROM tags t
+         LEFT JOIN document_tags dt ON dt.tag_id = t.id
+         GROUP BY t.id
+         ORDER BY doc_count DESC, t.name''',
+    );
+    return result.map((row) => row).toList();
+  }
+
+  List<Map<String, dynamic>> getTagsForDocument(String docId) {
+    final result = _db.select(
+      '''SELECT t.id, t.name
+         FROM tags t
+         JOIN document_tags dt ON dt.tag_id = t.id
+         WHERE dt.document_id = ?
+         ORDER BY t.name''',
+      [docId],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  List<Map<String, dynamic>> getDocumentsByTag(int tagId, {int limit = 100}) {
+    final result = _db.select(
+      '''SELECT d.*
+         FROM documents d
+         JOIN document_tags dt ON dt.document_id = d.id
+         WHERE dt.tag_id = ?
+         ORDER BY d.modified_at DESC
+         LIMIT ?''',
+      [tagId, limit],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  // --- Starred ---
+
+  void toggleStar(String docId) {
+    final existing = _db.select(
+      'SELECT document_id FROM starred WHERE document_id = ?', [docId],
+    );
+    if (existing.isNotEmpty) {
+      _db.execute('DELETE FROM starred WHERE document_id = ?', [docId]);
+    } else {
+      _db.execute(
+        'INSERT INTO starred (document_id, starred_at) VALUES (?, ?)',
+        [docId, DateTime.now().millisecondsSinceEpoch],
+      );
+    }
+  }
+
+  bool isStarred(String docId) {
+    final result = _db.select(
+      'SELECT document_id FROM starred WHERE document_id = ?', [docId],
+    );
+    return result.isNotEmpty;
+  }
+
+  List<Map<String, dynamic>> getStarredDocuments() {
+    final result = _db.select(
+      '''SELECT d.*, s.starred_at
+         FROM documents d
+         JOIN starred s ON s.document_id = d.id
+         ORDER BY s.starred_at DESC''',
+    );
+    return result.map((row) => row).toList();
+  }
+
+  // --- Recent Files ---
+
+  void recordFileOpened(String docId) {
+    _db.execute(
+      '''INSERT OR REPLACE INTO recent_files (document_id, opened_at)
+         VALUES (?, ?)''',
+      [docId, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  List<Map<String, dynamic>> getRecentFiles({int limit = 20}) {
+    final result = _db.select(
+      '''SELECT d.*, r.opened_at
+         FROM documents d
+         JOIN recent_files r ON r.document_id = d.id
+         ORDER BY r.opened_at DESC
+         LIMIT ?''',
+      [limit],
+    );
+    return result.map((row) => row).toList();
+  }
+
+  // --- Document lookup helpers ---
+
+  /// Find a document by filename (without extension) for wiki link resolution.
+  Map<String, dynamic>? findDocumentByTitle(String title) {
+    final result = _db.select(
+      'SELECT * FROM documents WHERE title = ? COLLATE NOCASE LIMIT 1',
+      [title],
+    );
+    if (result.isNotEmpty) return result.first;
+    // Try matching by filename without extension
+    final result2 = _db.select(
+      '''SELECT * FROM documents
+         WHERE REPLACE(REPLACE(path, '.md', ''), '.markdown', '') LIKE ?
+         LIMIT 1''',
+      ['%$title'],
+    );
+    if (result2.isNotEmpty) return result2.first;
+    return null;
+  }
+
+  /// Get all document titles for autocomplete.
+  List<Map<String, dynamic>> getAllDocumentTitles() {
+    final result = _db.select(
+      'SELECT id, title, path FROM documents ORDER BY title',
+    );
+    return result.map((row) => row).toList();
   }
 
   void close() {

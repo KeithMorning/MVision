@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:design_system/design_system.dart';
 
-/// First-run onboarding widget shown when no knowledge sources are connected.
+/// First-run onboarding widget shown when no vault is open.
 class OnboardingGuide extends StatelessWidget {
   const OnboardingGuide({
     super.key,
@@ -55,7 +55,7 @@ class OnboardingGuide extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '你的 AI 知识客户端。连接本地目录或云端存储，\n让 AI 帮你整理和关联知识。',
+                '你的本地知识库。打开一个包含 Markdown 文件的目录，\n开始构建你的知识网络。',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: isDark
@@ -67,20 +67,20 @@ class OnboardingGuide extends StatelessWidget {
               const SizedBox(height: AppSpacing.xxl),
               // Steps
               _StepCard(
-                icon: Icons.create_new_folder_rounded,
-                title: '连接知识源',
-                subtitle: '添加包含 Markdown 文件的本地目录',
+                icon: Icons.folder_open_rounded,
+                title: '打开知识库',
+                subtitle: '选择包含 Markdown 文件的本地目录',
                 color: AppColors.primary,
                 isDark: isDark,
-                actionLabel: '添加目录',
+                actionLabel: '打开目录',
                 onAction: onAddSource,
               ),
               const SizedBox(height: AppSpacing.md),
               _StepCard(
-                icon: Icons.auto_awesome_rounded,
-                title: '配置 AI（可选）',
-                subtitle: '启用 Wiki 编译和知识问答',
-                color: AppColors.aiIndicator,
+                icon: Icons.sync_rounded,
+                title: '百度网盘同步（可选）',
+                subtitle: '使用 BDUSS Cookie 同步到云端',
+                color: AppColors.info,
                 isDark: isDark,
                 actionLabel: '配置',
                 onAction: onConfigureAi ?? () {},
