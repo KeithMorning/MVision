@@ -49,31 +49,25 @@ class _AiPageState extends ConsumerState<AiPage> {
   final _modelController = TextEditingController();
   
   bool _isTesting = false;
+  bool _isSaving = false;
   String? _testResult;
   bool _testSuccess = false;
   bool _configLoaded = false;
+  bool _justSaved = false;
 
   @override
   void initState() {
     super.initState();
-    // Listen for config changes (async load completion)
-    ref.listenManual(aiConfigProvider, (prev, next) {
-      if (next != null && !_configLoaded) {
-        _populateFields(next);
+    // One-time load after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_configLoaded && mounted) {
+        final config = ref.read(aiConfigProvider);
+        if (config != null) {
+          _populateFields(config);
+          setState(() {});
+        }
       }
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Try loading config synchronously (works if already cached)
-    if (!_configLoaded) {
-      final config = ref.read(aiConfigProvider);
-      if (config != null) {
-        _populateFields(config);
-      }
-    }
   }
 
   @override
@@ -115,18 +109,47 @@ class _AiPageState extends ConsumerState<AiPage> {
   }
 
   Future<void> _saveConfig() async {
-    final config = AiConfig(
-      baseUrl: _baseUrlController.text.trim(),
-      apiKey: _apiKeyController.text.trim(),
-      model: _modelController.text.trim(),
-    );
+    final baseUrl = _baseUrlController.text.trim();
+    final apiKey = _apiKeyController.text.trim();
+    final model = _modelController.text.trim();
 
-    await ref.read(aiConfigProvider.notifier).save(config);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI 配置已保存')),
+    if (baseUrl.isEmpty || apiKey.isEmpty || model.isEmpty) {
+      setState(() {
+        _testResult = '请填写所有配置项';
+        _testSuccess = false;
+      });
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final config = AiConfig(
+        baseUrl: baseUrl,
+        apiKey: apiKey,
+        model: model,
       );
+
+      await ref.read(aiConfigProvider.notifier).save(config);
+
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _justSaved = true;
+        });
+        // Auto-hide success indicator
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _justSaved = false);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _testResult = '保存失败: $e';
+          _testSuccess = false;
+        });
+      }
     }
   }
 
@@ -136,6 +159,13 @@ class _AiPageState extends ConsumerState<AiPage> {
     final isDark = theme.brightness == Brightness.dark;
     final config = ref.watch(aiConfigProvider);
     final isConfigured = config?.isConfigured ?? false;
+
+    // React to async config load (from secure storage)
+    ref.listen<AiConfig?>(aiConfigProvider, (prev, next) {
+      if (next != null && !_configLoaded) {
+        _populateFields(next);
+      }
+    });
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
@@ -266,9 +296,17 @@ class _AiPageState extends ConsumerState<AiPage> {
                       ),
                       const SizedBox(width: AppSpacing.md),
                       FilledButton.icon(
-                        onPressed: _saveConfig,
-                        icon: const Icon(Icons.save_rounded, size: 18),
-                        label: const Text('保存配置'),
+                        onPressed: _isSaving ? null : _saveConfig,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : _justSaved
+                                ? const Icon(Icons.check_rounded, size: 18)
+                                : const Icon(Icons.save_rounded, size: 18),
+                        label: Text(_justSaved ? '已保存' : '保存配置'),
                       ),
                       if (isConfigured) ...[
                         const SizedBox(width: AppSpacing.md),
