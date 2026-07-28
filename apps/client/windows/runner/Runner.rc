@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "mvision_client" "\0"
+            VALUE "CompanyName", "MVision" "\0"
+            VALUE "FileDescription", "MVision - AI Knowledge Client" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "mvision_client" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "InternalName", "MVision" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 MVision. All rights reserved." "\0"
             VALUE "OriginalFilename", "mvision_client.exe" "\0"
-            VALUE "ProductName", "mvision_client" "\0"
+            VALUE "ProductName", "MVision" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

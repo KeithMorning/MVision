@@ -1,5 +1,5 @@
 # MVision Build Script (Windows)
-# Usage: .\build.ps1 [-Platform windows] [-Mode release|debug|profile]
+# Usage: .\build.ps1 [-Platform windows] [-Mode release|debug|profile] [-Msix]
 #
 # Requires: Flutter 3.44.8+ (Dart 3.12.2+), Visual Studio 2022 with
 # "Desktop development with C++" workload.
@@ -9,7 +9,9 @@ param(
     [string]$Platform = 'windows',
 
     [ValidateSet('release', 'debug', 'profile')]
-    [string]$Mode = 'release'
+    [string]$Mode = 'release',
+
+    [switch]$Msix
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,6 +72,22 @@ try {
         Info "Windows build complete: $exe ($size)"
     } else {
         Warn "Build output not found at expected path: $exe"
+    }
+
+    # --- MSIX Packaging ---
+    if ($Msix -and $Mode -eq 'release') {
+        Info 'Creating MSIX installer...'
+        dart run msix:create
+        if ($LASTEXITCODE -ne 0) { Fail 'MSIX packaging failed' }
+        $msixFile = Join-Path $ClientDir 'build\windows\x64\runner\Release\MVision.msix'
+        if (Test-Path $msixFile) {
+            $msixSize = '{0:N1} MB' -f ((Get-Item $msixFile).Length / 1MB)
+            Info "MSIX installer created: $msixFile ($msixSize)"
+        } else {
+            Warn "MSIX file not found at expected path: $msixFile"
+        }
+    } elseif ($Msix -and $Mode -ne 'release') {
+        Warn 'MSIX packaging is only supported for release builds.'
     }
 } finally {
     Pop-Location
