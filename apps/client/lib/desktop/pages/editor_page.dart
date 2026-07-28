@@ -63,12 +63,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   @override
   void initState() {
     super.initState();
-    _initAppSupport();
-    _loadDocument();
+    // Initialize controller FIRST before loading document
     _controller = MarkdownHighlightController(
       isDark: WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark,
     );
     _controller.addListener(_onTextChanged);
+    _initAppSupport();
+    _loadDocument();
     _updateWordCount();
   }
 
