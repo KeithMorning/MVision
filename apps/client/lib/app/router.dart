@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../desktop/pages/home_page.dart';
 import '../desktop/pages/library_page.dart';
+import '../desktop/pages/graph_page.dart';
 import '../desktop/pages/ai_page.dart';
 import '../desktop/pages/search_page.dart';
 import '../desktop/pages/settings_page.dart';
@@ -43,6 +44,13 @@ final appRouter = GoRouter(
           name: 'library',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: LibraryPage(),
+          ),
+        ),
+        GoRoute(
+          path: '/graph',
+          name: 'graph',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: GraphPage(),
           ),
         ),
         GoRoute(

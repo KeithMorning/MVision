@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
+import 'package:path/path.dart' as p;
 
 import '../../app/providers.dart';
 
@@ -154,6 +157,30 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
           context.go('/library');
         },
       ),
+      PaletteCommand(
+        id: 'graph',
+        title: '关系图谱',
+        subtitle: '可视化笔记之间的链接关系',
+        icon: Icons.hub_rounded,
+        action: () {
+          Navigator.of(context).pop();
+          context.go('/graph');
+        },
+      ),
+      PaletteCommand(
+        id: 'daily-note',
+        title: '打开今日日记',
+        subtitle: '创建或打开今天的日记',
+        icon: Icons.today_rounded,
+        action: () => _openDailyNote(),
+      ),
+      PaletteCommand(
+        id: 'insert-template',
+        title: '插入模板',
+        subtitle: '从模板文件夹插入内容',
+        icon: Icons.content_paste_rounded,
+        action: () => _insertTemplate(),
+      ),
     ];
   }
 
@@ -168,6 +195,41 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
     }
     // Navigate to editor with new file path
     context.push('/editor/path?path=${Uri.encodeComponent('Untitled.md')}');
+  }
+
+  void _openDailyNote() {
+    Navigator.of(context).pop();
+    final vault = ref.read(vaultProvider);
+    if (vault == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先打开一个知识库')),
+      );
+      return;
+    }
+    
+    // Generate daily note path: daily/2024-01-15.md
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final dailyPath = 'daily/$dateStr.md';
+    
+    context.push('/editor/path?path=${Uri.encodeComponent(dailyPath)}');
+  }
+
+  void _insertTemplate() {
+    Navigator.of(context).pop();
+    final vault = ref.read(vaultProvider);
+    if (vault == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先打开一个知识库')),
+      );
+      return;
+    }
+    
+    // Show template picker dialog
+    showDialog(
+      context: context,
+      builder: (ctx) => _TemplatePickerDialog(vaultPath: vault.rootPath),
+    );
   }
 
   void _showQuickSwitcher() {
@@ -443,6 +505,111 @@ class _CommandTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Dialog for picking a template from the templates folder.
+class _TemplatePickerDialog extends StatefulWidget {
+  const _TemplatePickerDialog({required this.vaultPath});
+  final String vaultPath;
+
+  @override
+  State<_TemplatePickerDialog> createState() => _TemplatePickerDialogState();
+}
+
+class _TemplatePickerDialogState extends State<_TemplatePickerDialog> {
+  List<String> _templates = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTemplates();
+  }
+
+  void _loadTemplates() {
+    final templatesDir = Directory(p.join(widget.vaultPath, 'templates'));
+    if (templatesDir.existsSync()) {
+      final files = templatesDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.md'))
+          .map((f) => p.basename(f.path))
+          .toList()
+        ..sort();
+      setState(() {
+        _templates = files;
+        _isLoading = false;
+      });
+    } else {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('选择模板'),
+      content: SizedBox(
+        width: 300,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _templates.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.folder_off_outlined,
+                          size: 40,
+                          color: AppColors.textSecondary.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          '未找到模板',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          '在知识库中创建 templates/ 文件夹\n并添加 .md 模板文件',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _templates.length,
+                    itemBuilder: (context, index) {
+                      final template = _templates[index];
+                      return ListTile(
+                        leading: const Icon(Icons.description_outlined),
+                        title: Text(template.replaceAll('.md', '')),
+                        subtitle: Text(template),
+                        onTap: () {
+                          Navigator.of(context).pop(template);
+                          // TODO: Insert template content into active editor
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('已选择模板: $template')),
+                          );
+                        },
+                      );
+                    },
+                  ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+      ],
     );
   }
 }

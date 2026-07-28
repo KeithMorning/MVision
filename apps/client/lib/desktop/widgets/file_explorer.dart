@@ -74,6 +74,8 @@ class _FileExplorerState extends ConsumerState<FileExplorer> {
             ],
           ),
         ),
+        // Starred section
+        _StarredSection(isDark: isDark),
         // File tree
         Expanded(
           child: fileTree.isEmpty
@@ -669,6 +671,146 @@ class _NoVault extends StatelessWidget {
                     : AppColors.textSecondary.withValues(alpha: 0.7),
               ),
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Starred documents section in sidebar.
+class _StarredSection extends ConsumerStatefulWidget {
+  const _StarredSection({required this.isDark});
+  final bool isDark;
+
+  @override
+  ConsumerState<_StarredSection> createState() => _StarredSectionState();
+}
+
+class _StarredSectionState extends ConsumerState<_StarredSection> {
+  bool _isExpanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final db = ref.watch(databaseProvider);
+    final starred = db.getStarredDocuments();
+
+    if (starred.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        InkWell(
+          onTap: () => setState(() => _isExpanded = !_isExpanded),
+          borderRadius: BorderRadius.circular(AppRadius.button),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _isExpanded
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_right_rounded,
+                  size: 16,
+                  color: widget.isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.star_rounded,
+                  size: 14,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '收藏',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: widget.isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${starred.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: widget.isDark
+                        ? AppColors.textSecondaryDark.withValues(alpha: 0.6)
+                        : AppColors.textSecondary.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Starred items
+        if (_isExpanded)
+          ...starred.take(10).map((doc) => _StarredTile(
+                doc: doc,
+                isDark: widget.isDark,
+              )),
+        const SizedBox(height: AppSpacing.sm),
+        // Divider
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: Divider(
+            height: 1,
+            color: widget.isDark ? AppColors.borderDark : AppColors.border,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
+    );
+  }
+}
+
+class _StarredTile extends StatelessWidget {
+  const _StarredTile({required this.doc, required this.isDark});
+
+  final Map<String, dynamic> doc;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = doc['title'] as String;
+    final id = doc['id'] as String;
+
+    return InkWell(
+      onTap: () => context.push('/reader/$id'),
+      borderRadius: BorderRadius.circular(AppRadius.button),
+      child: Padding(
+        padding: const EdgeInsets.only(
+          left: 36,
+          top: 3,
+          bottom: 3,
+          right: 8,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.description_outlined,
+              size: 14,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),

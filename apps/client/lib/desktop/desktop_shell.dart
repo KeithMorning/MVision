@@ -136,6 +136,14 @@ class _TitleBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          // Graph view button
+          _SidebarIconButton(
+            icon: Icons.hub_rounded,
+            tooltip: '关系图谱',
+            isDark: isDark,
+            onTap: () => context.go('/graph'),
+          ),
+          const SizedBox(width: 4),
           // Search button
           _SidebarIconButton(
             icon: Icons.search_rounded,

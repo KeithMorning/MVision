@@ -31,6 +31,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   List<_TocItem> _toc = [];
   bool _showToc = true;
   bool _showBacklinks = false;
+  bool _isStarred = false;
 
   @override
   void initState() {
@@ -49,7 +50,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final doc = db.getDocument(widget.documentId);
     if (doc == null) return;
 
-    setState(() => _doc = doc);
+    setState(() {
+      _doc = doc;
+      _isStarred = db.isStarred(widget.documentId);
+    });
 
     final path = doc['path'] as String;
     final sourceId = doc['source_id'] as String;
@@ -115,6 +119,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
   }
 
+  void _toggleStar() {
+    final db = ref.read(databaseProvider);
+    db.toggleStar(widget.documentId);
+    setState(() => _isStarred = !_isStarred);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -137,6 +147,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          // Star button
+          IconButton(
+            icon: Icon(
+              _isStarred ? Icons.star_rounded : Icons.star_outline_rounded,
+              color: _isStarred ? AppColors.warning : null,
+            ),
+            tooltip: _isStarred ? '取消收藏' : '收藏',
+            onPressed: _toggleStar,
+          ),
           // Backlinks toggle
           IconButton(
             icon: Icon(
