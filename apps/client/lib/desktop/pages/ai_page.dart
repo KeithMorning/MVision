@@ -51,11 +51,15 @@ class _AiPageState extends ConsumerState<AiPage> {
   bool _isTesting = false;
   String? _testResult;
   bool _testSuccess = false;
+  bool _configLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _loadConfig();
+    // Load config after first frame to ensure provider is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadConfig();
+    });
   }
 
   @override
@@ -68,10 +72,11 @@ class _AiPageState extends ConsumerState<AiPage> {
 
   void _loadConfig() {
     final config = ref.read(aiConfigProvider);
-    if (config != null) {
+    if (config != null && !_configLoaded) {
       _baseUrlController.text = config.baseUrl;
       _apiKeyController.text = config.apiKey;
       _modelController.text = config.model;
+      _configLoaded = true;
     }
   }
 
@@ -119,6 +124,18 @@ class _AiPageState extends ConsumerState<AiPage> {
     final isDark = theme.brightness == Brightness.dark;
     final config = ref.watch(aiConfigProvider);
     final isConfigured = config?.isConfigured ?? false;
+
+    // React to async config load
+    if (config != null && !_configLoaded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _baseUrlController.text = config.baseUrl;
+          _apiKeyController.text = config.apiKey;
+          _modelController.text = config.model;
+          _configLoaded = true;
+        }
+      });
+    }
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
