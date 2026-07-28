@@ -153,6 +153,67 @@ class AiService {
     throw Exception('No response from AI');
   }
 
+  /// Send a streaming chat completion request.
+  /// Calls [onToken] for each token received.
+  Future<String> chatStream({
+    required String systemPrompt,
+    required String userMessage,
+    required void Function(String token) onToken,
+    double temperature = 0.7,
+    int maxTokens = 4096,
+  }) async {
+    final config = await loadConfig();
+    if (config == null || !config.isConfigured) {
+      throw Exception('AI not configured. Please set up your API key in Settings.');
+    }
+
+    final buffer = StringBuffer();
+
+    final response = await _dio.post<ResponseBody>(
+      '${config.baseUrl}/chat/completions',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${config.apiKey}',
+          'Content-Type': 'application/json',
+        },
+        responseType: ResponseType.stream,
+      ),
+      data: {
+        'model': config.model,
+        'messages': [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': userMessage},
+        ],
+        'temperature': temperature,
+        'max_tokens': maxTokens,
+        'stream': true,
+      },
+    );
+
+    final stream = response.data!.stream;
+    final lines = stream.cast<List<int>>().transform(utf8.decoder).transform(const LineSplitter());
+
+    await for (final line in lines) {
+      if (line.startsWith('data: ')) {
+        final data = line.substring(6);
+        if (data == '[DONE]') break;
+        try {
+          final json = jsonDecode(data) as Map<String, dynamic>;
+          final delta = json['choices']?[0]?['delta'];
+          final content = delta?['content'] as String?;
+          if (content != null && content.isNotEmpty) {
+            buffer.write(content);
+            onToken(content);
+          }
+        } catch (_) {
+          // Skip malformed chunks
+        }
+      }
+    }
+
+    return buffer.toString();
+  }
+
   /// Generate Wiki content from source documents (FR-AI-003).
   Future<WikiCompilationResult> compileWiki({
     required List<String> sourceContents,

@@ -181,6 +181,36 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
         icon: Icons.content_paste_rounded,
         action: () => _insertTemplate(),
       ),
+      PaletteCommand(
+        id: 'ai-config',
+        title: 'AI 配置',
+        subtitle: '配置 LLM API 密钥 (BYOK)',
+        icon: Icons.auto_awesome_rounded,
+        action: () {
+          Navigator.of(context).pop();
+          context.go('/ai');
+        },
+      ),
+      PaletteCommand(
+        id: 'ai-wiki',
+        title: 'Wiki 编译',
+        subtitle: 'AI 将资料整理成结构化 Wiki',
+        icon: Icons.auto_stories_rounded,
+        action: () {
+          Navigator.of(context).pop();
+          context.go('/wiki');
+        },
+      ),
+      PaletteCommand(
+        id: 'ai-qa',
+        title: '知识问答',
+        subtitle: '基于知识库回答AI问题',
+        icon: Icons.question_answer_rounded,
+        action: () {
+          Navigator.of(context).pop();
+          context.go('/qa');
+        },
+      ),
     ];
   }
 

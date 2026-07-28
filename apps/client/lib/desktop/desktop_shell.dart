@@ -278,6 +278,14 @@ class _TitleBar extends StatelessWidget {
             onTap: () => context.go('/graph'),
           ),
           const SizedBox(width: 4),
+          // AI button
+          _SidebarIconButton(
+            icon: Icons.auto_awesome_rounded,
+            tooltip: 'AI',
+            isDark: isDark,
+            onTap: () => context.go('/ai'),
+          ),
+          const SizedBox(width: 4),
           // Search button
           _SidebarIconButton(
             icon: Icons.search_rounded,

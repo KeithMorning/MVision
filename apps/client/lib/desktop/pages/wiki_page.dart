@@ -25,6 +25,8 @@ class _WikiPageState extends ConsumerState<WikiPage> {
   bool _isCompiling = false;
   WikiCompilationResult? _result;
   String? _error;
+  final Set<int> _appliedPatches = {};
+  bool _isApplying = false;
 
   @override
   void dispose() {
@@ -93,6 +95,63 @@ class _WikiPageState extends ConsumerState<WikiPage> {
         _isCompiling = false;
         _error = 'Wiki 编译失败: $e';
       });
+    }
+  }
+
+  Future<void> _applyPatch(int index) async {
+    final patch = _result!.patches[index];
+    final vault = ref.read(vaultProvider);
+    if (vault == null) return;
+
+    setState(() => _isApplying = true);
+
+    try {
+      final filePath = '${vault.rootPath}/${patch.path}';
+      final file = File(filePath);
+
+      // Create parent directory if needed
+      final parentDir = file.parent;
+      if (!parentDir.existsSync()) {
+        parentDir.createSync(recursive: true);
+      }
+
+      if (patch.action == 'update' && file.existsSync()) {
+        // Append new content for updates
+        final existing = file.readAsStringSync();
+        file.writeAsStringSync('$existing\n\n${patch.content}');
+      } else {
+        // Create new file
+        file.writeAsStringSync(patch.content);
+      }
+
+      setState(() {
+        _appliedPatches.add(index);
+        _isApplying = false;
+      });
+
+      // Refresh file tree
+      ref.read(fileTreeProvider.notifier).refresh();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已应用: ${patch.path}')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isApplying = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('应用失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _applyAllPatches() async {
+    for (int i = 0; i < _result!.patches.length; i++) {
+      if (!_appliedPatches.contains(i)) {
+        await _applyPatch(i);
+      }
     }
   }
 
@@ -312,7 +371,23 @@ class _WikiPageState extends ConsumerState<WikiPage> {
           Text('生成的 Wiki 页面 (${_result!.patches.length})',
             style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: AppSpacing.md),
-          ..._result!.patches.map((patch) => _PatchCard(patch: patch, isDark: isDark)),
+          ..._result!.patches.asMap().entries.map((entry) => _PatchCard(
+            patch: entry.value,
+            isDark: isDark,
+            isApplied: _appliedPatches.contains(entry.key),
+            isApplying: _isApplying,
+            onApply: () => _applyPatch(entry.key),
+          )),
+          // Apply all button
+          if (_result!.patches.length > 1 && _appliedPatches.length < _result!.patches.length)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.md),
+              child: FilledButton.icon(
+                onPressed: _isApplying ? null : _applyAllPatches,
+                icon: const Icon(Icons.done_all_rounded, size: 18),
+                label: const Text('全部应用到知识库'),
+              ),
+            ),
         ],
         // Links
         if (_result!.links.isNotEmpty) ...[
@@ -336,10 +411,19 @@ class _WikiPageState extends ConsumerState<WikiPage> {
 }
 
 class _PatchCard extends StatelessWidget {
-  const _PatchCard({required this.patch, required this.isDark});
+  const _PatchCard({
+    required this.patch,
+    required this.isDark,
+    required this.isApplied,
+    required this.isApplying,
+    required this.onApply,
+  });
 
   final WikiPatchItem patch;
   final bool isDark;
+  final bool isApplied;
+  final bool isApplying;
+  final VoidCallback onApply;
 
   @override
   Widget build(BuildContext context) {
@@ -406,6 +490,29 @@ class _PatchCard extends StatelessWidget {
                 )).toList(),
               ),
             ],
+            // Apply button
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (isApplied)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle_rounded, size: 16, color: AppColors.success),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text('已应用', style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.success, fontWeight: FontWeight.w600)),
+                    ],
+                  )
+                else
+                  FilledButton.tonalIcon(
+                    onPressed: isApplying ? null : onApply,
+                    icon: const Icon(Icons.download_rounded, size: 16),
+                    label: const Text('应用'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

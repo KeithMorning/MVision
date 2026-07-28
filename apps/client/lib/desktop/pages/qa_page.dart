@@ -44,15 +44,18 @@ class _QaPageState extends ConsumerState<QaPage> {
     try {
       final db = ref.read(databaseProvider);
       final aiService = ref.read(aiServiceProvider);
+      final vault = ref.read(vaultProvider);
 
-      // Gather context from recent documents (up to 5)
-      final docs = db.getDocuments(limit: 5);
+      // Use FTS search to find relevant documents based on the question
       final contextDocs = <String>[];
-      for (final doc in docs) {
-        final source = db.getSourceById(doc['source_id'] as String);
+      final relevantDocs = db.search(question, limit: 8);
+      
+      for (final doc in relevantDocs) {
+        final path = doc['path'] as String;
+        final sourceId = doc['source_id'] as String;
+        final source = db.getSourceById(sourceId);
         if (source != null) {
           final rootPath = source['root_path'] as String;
-          final path = doc['path'] as String;
           final file = File('$rootPath/$path');
           if (file.existsSync()) {
             final content = file.readAsStringSync();
@@ -64,20 +67,41 @@ class _QaPageState extends ConsumerState<QaPage> {
         }
       }
 
+      // Fallback: if FTS found nothing, use recent documents
+      if (contextDocs.isEmpty && vault != null) {
+        final docs = db.getDocuments(limit: 5);
+        for (final doc in docs) {
+          final source = db.getSourceById(doc['source_id'] as String);
+          if (source != null) {
+            final rootPath = source['root_path'] as String;
+            final path = doc['path'] as String;
+            final file = File('$rootPath/$path');
+            if (file.existsSync()) {
+              final content = file.readAsStringSync();
+              contextDocs.add(content.length > 3000
+                  ? content.substring(0, 3000)
+                  : content);
+            }
+          }
+        }
+      }
+
       final result = await aiService.askQuestion(
         question: question,
         contextDocuments: contextDocs,
       );
 
-      setState(() {
-        _isThinking = false;
-        _messages.add(_QaMessage(
-          role: 'assistant',
-          content: result.answer,
-          sources: result.sources,
-          confidence: result.confidence,
-        ));
-      });
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _messages.add(_QaMessage(
+            role: 'assistant',
+            content: result.answer,
+            sources: result.sources,
+            confidence: result.confidence,
+          ));
+        });
+      }
     } catch (e) {
       setState(() {
         _isThinking = false;
