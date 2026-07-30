@@ -1,145 +1,150 @@
-# MVision 构建指南
+# MVision Build Guide
 
-本文件说明 MVision 客户端（`apps/client`，Flutter）在各桌面平台的编译命令与环境配置。
-快速构建可直接使用仓库根目录的脚本：Windows 用 `build.ps1`，macOS 用 `build.sh`。
+> [English](build.md) | [简体中文](build.zh-CN.md)
 
-> 目标平台：macOS、Windows。移动端（iOS / Android / HarmonyOS）尚未进入构建阶段。
+This document describes how to build the MVision client (`apps/client`, Flutter) on each
+desktop platform, including build commands and environment setup. For quick builds, use the
+scripts at the repository root: `build.ps1` on Windows, `build.sh` on macOS.
 
-## 1. 前置要求
+> Target platforms: macOS, Windows. Mobile (iOS / Android / HarmonyOS) is not yet in the build phase.
+
+## 1. Prerequisites
 
 ### 1.1 Flutter SDK
 
-- **Flutter 3.44.8+（Dart 3.12.2+）** 是本项目的硬性要求（`pubspec.yaml` 中 `sdk: ^3.11.0`，
-  旧版 SDK 无法解析依赖约束）。
-- 推荐使用 stable 通道。下载：<https://docs.flutter.dev/get-started/install>
-- 解压后确保 `<flutter>/bin` 在 `PATH` 中，可用 `flutter --version` 验证。
+- **Flutter 3.44.8+ (Dart 3.12.2+)** is a hard requirement (`sdk: ^3.11.0` in `pubspec.yaml`;
+  older SDKs cannot resolve the dependency constraints).
+- Use the stable channel. Download: <https://docs.flutter.dev/get-started/install>
+- After extracting, ensure `<flutter>/bin` is on your `PATH`; verify with `flutter --version`.
 
-### 1.2 国内镜像（中国大陆网络环境）
+### 1.2 Mirrors (Mainland China network)
 
-首次 `flutter pub get` 和下载引擎产物时建议设置镜像，否则可能超时：
+For the first `flutter pub get` and engine artifact downloads, setting mirrors is recommended
+to avoid timeouts:
 
 ```bash
-# macOS / Linux（写入 ~/.zshrc 或 ~/.bashrc）
+# macOS / Linux (add to ~/.zshrc or ~/.bashrc)
 export PUB_HOSTED_URL=https://pub.flutter-io.cn
 export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
 
-# Windows PowerShell（当前会话）
+# Windows PowerShell (current session)
 $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
 $env:FLUTTER_STORAGE_BASE_URL = 'https://storage.flutter-io.cn'
 ```
 
-> `build.ps1` 与 `build.sh` 已内置设置上述镜像，无需手动配置。
+> `build.ps1` and `build.sh` already set these mirrors, so manual configuration is not needed.
 
-## 2. 依赖准备
+## 2. Dependency Setup
 
-所有构建都从依赖解析开始。首次克隆仓库后必须执行：
+Every build starts with dependency resolution. After cloning the repo for the first time:
 
 ```bash
 cd apps/client
 flutter pub get
 ```
 
-本地路径依赖位于 `packages/` 下（`design_system`、`knowledge_core`、`platform_api` 等），
-`flutter pub get` 会一并解析。
+Local path dependencies live under `packages/` (`design_system`, `knowledge_core`,
+`platform_api`, etc.) and are resolved together by `flutter pub get`.
 
 ---
 
-## 3. Windows 构建
+## 3. Windows Build
 
-### 3.1 环境要求
+### 3.1 Requirements
 
-- **Windows 10 / 11**（x64）
-- **Visual Studio 2022**，安装 **"使用 C++ 的桌面开发"（Desktop development with C++）** 工作负载。
-  需包含 MSVC v143 编译器（cl.exe / link.exe）与 Windows SDK。
-- Flutter 3.44.8+。
+- **Windows 10 / 11** (x64)
+- **Visual Studio 2022** with the **"Desktop development with C++"** workload installed.
+  It must include the MSVC v143 compiler (cl.exe / link.exe) and the Windows SDK.
+- Flutter 3.44.8+.
 
-> 验证安装：`flutter doctor -v`，`[!] Visual Studio` 一行需显示为 `[√]` 并识别到 VS 2022。
+> Verify the install with `flutter doctor -v`; the `[!] Visual Studio` line should read `[√]`
+> and detect VS 2022.
 
-### 3.2 快速构建（推荐）
+### 3.2 Quick Build (Recommended)
 
-从仓库根目录执行：
+Run from the repository root:
 
 ```powershell
-# 默认 release 模式，SDK 位于默认路径
+# Default release mode, SDK at the default path
 .\build.ps1
 
-# 指定 SDK 路径
+# Specify the SDK path
 $env:MVISION_FLUTTER_HOME = 'D:\SDKs\flutter'
 .\build.ps1 -Mode debug
 
-# 构建 + 打包 MSIX 安装包（仅 release）
+# Build + create an MSIX installer (release only)
 .\build.ps1 -Msix
 ```
 
-脚本参数：
+Script parameters:
 
-| 参数 | 取值 | 说明 |
+| Parameter | Values | Description |
 |---|---|---|
-| `-Platform` | `windows` | 平台（当前仅 windows） |
-| `-Mode` | `release` / `debug` / `profile` | 构建模式，默认 `release` |
-| `-Msix` | 开关 | 生成 MSIX 安装包，仅 release 生效 |
+| `-Platform` | `windows` | Platform (currently windows only) |
+| `-Mode` | `release` / `debug` / `profile` | Build mode, default `release` |
+| `-Msix` | switch | Produce an MSIX installer; release only |
 
-### 3.3 手动构建
+### 3.3 Manual Build
 
 ```powershell
 cd apps/client
 flutter pub get
-flutter build windows --release   # 或 --debug / --profile
+flutter build windows --release   # or --debug / --profile
 ```
 
-### 3.4 产物位置
+### 3.4 Output Location
 
 ```
 apps/client/build/windows/x64/runner/Release/
-├── mvision_client.exe            # 主程序
-├── flutter_windows.dll           # Flutter 引擎
-├── sqlite3.dll                   # SQLite 数据库
+├── mvision_client.exe            # main executable
+├── flutter_windows.dll           # Flutter engine
+├── sqlite3.dll                   # SQLite database
 ├── sqlite3_flutter_libs_plugin.dll
 ├── url_launcher_windows_plugin.dll
-└── data/                         # Flutter 资产（Dart AOT 代码、字体、图片）
+└── data/                         # Flutter assets (Dart AOT code, fonts, images)
 ```
 
-双击 `mvision_client.exe` 即可运行；或用 `flutter run -d windows` 调试运行。
+Double-click `mvision_client.exe` to run, or use `flutter run -d windows` for debug runs.
 
-### 3.5 MSIX 安装包
+### 3.5 MSIX Installer
 
-pubspec.yaml 中已配置 `msix`（`com.mvision.client`，v1.0.0.0）。release 构建后：
+`msix` is configured in pubspec.yaml (`com.mvision.client`, v1.0.0.0). After a release build:
 
 ```powershell
 cd apps/client
 dart run msix:create
-# 产物：build/windows/x64/runner/Release/MVision.msix
+# Output: build/windows/x64/runner/Release/MVision.msix
 ```
 
-或直接 `.\build.ps1 -Msix` 一步完成。
+Or run `.\build.ps1 -Msix` to do it in one step.
 
 ---
 
-## 4. macOS 构建
+## 4. macOS Build
 
-### 4.1 环境要求
+### 4.1 Requirements
 
-- **macOS 12+**（建议最新版）
-- **Xcode 15+**（含 Command Line Tools）：`xcode-select --install`
-- **CocoaPods**：`sudo gem install cocoapods`（或 `brew install cocoapods`）
-- macOS 部署目标：**10.15**（见 `macos/Podfile`）
-- Flutter 3.44.8+。
+- **macOS 12+** (latest recommended)
+- **Xcode 15+** (with Command Line Tools): `xcode-select --install`
+- **CocoaPods**: `sudo gem install cocoapods` (or `brew install cocoapods`)
+- macOS deployment target: **10.15** (see `macos/Podfile`)
+- Flutter 3.44.8+.
 
-### 4.2 快速构建（推荐）
+### 4.2 Quick Build (Recommended)
 
 ```bash
-# 默认构建 macOS release
+# Default: build macOS release
 ./build.sh macos release
 
-# debug 模式
+# Debug mode
 ./build.sh macos debug
 ```
 
-脚本用法：`./build.sh [macos|windows|all] [release|debug|profile]`
+Script usage: `./build.sh [macos|windows|all] [release|debug|profile]`
 
-> `build.sh` 默认 Flutter 路径为 `$HOME/development/flutter/bin`，按需调整。
+> `build.sh` defaults the Flutter path to `$HOME/development/flutter/bin`; adjust as needed.
 
-### 4.3 手动构建
+### 4.3 Manual Build
 
 ```bash
 cd apps/client
@@ -147,7 +152,7 @@ flutter pub get
 flutter build macos --release
 ```
 
-如遇 CocoaPods 相关报错，手动执行：
+If you hit CocoaPods errors, run manually:
 
 ```bash
 cd apps/client/macos
@@ -156,95 +161,100 @@ cd ..
 flutter build macos --release
 ```
 
-### 4.4 产物位置
+### 4.4 Output Location
 
 ```
 apps/client/build/macos/Build/Products/Release/mvision_client.app
 ```
 
-双击 `.app` 运行，或 `flutter run -d macos`。
+Double-click the `.app` to run, or use `flutter run -d macos`.
 
-### 4.5 签名与权限
+### 4.5 Signing & Entitlements
 
-当前 entitlements（`macos/Runner/DebugProfile.entitlements`、`Release.entitlements`）已关闭 App Sandbox，
-并启用：网络客户端/服务端（debug）、用户选定文件读写权限。分发前需配置开发者证书：
+The current entitlements (`macos/Runner/DebugProfile.entitlements`, `Release.entitlements`)
+disable App Sandbox and enable: network client/server (debug) and user-selected file
+read/write. Before distribution, configure a developer certificate:
 
 ```bash
 open macos/Runner.xcworkspace
-# 在 Xcode → Signing & Capabilities 中配置 Team 与 Bundle ID
+# In Xcode -> Signing & Capabilities, set Team and Bundle ID
 ```
 
 ---
 
-## 5. 构建模式
+## 5. Build Modes
 
-| 模式 | 用途 | 特点 |
+| Mode | Use case | Characteristics |
 |---|---|---|
-| `debug` | 开发调试 | 支持 JIT、热重载、断点；体积大、性能低 |
-| `profile` | 性能分析 | 接近 release 性能，保留分析工具 |
-| `release` | 发布分发 | AOT 编译，体积小、性能最优；用于 MSIX / 分发 |
+| `debug` | Development & debugging | JIT, hot reload, breakpoints; large size, lower perf |
+| `profile` | Profiling | Near-release perf, keeps analysis tools |
+| `release` | Distribution | AOT compiled; small size, best perf; used for MSIX / distribution |
 
-开发阶段用 `--debug` + `flutter run`；产出可分发包用 `--release`。
+Use `--debug` + `flutter run` during development; use `--release` to produce a distributable package.
 
 ---
 
-## 6. 常见问题排查
+## 6. Troubleshooting
 
-### 6.1 Windows: "Building native assets failed" / 找不到 cl.exe
+### 6.1 Windows: "Building native assets failed" / cl.exe not found
 
-**原因**：MSVC 工具集目录损坏（`cl.exe` / `link.exe` 缺失）。Flutter 原生资源构建会选取版本号最高的工具集目录，若该目录残缺即报错。
+**Cause**: A corrupted MSVC toolset directory (missing `cl.exe` / `link.exe`). Flutter's native
+asset builder picks the highest-version toolset directory; if that one is incomplete, it fails.
 
-**排查**：
+**Diagnose**:
 
 ```powershell
-# 列出已安装的 MSVC 工具集
+# List installed MSVC toolsets
 ls 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC'
 
-# 检查某版本是否完整（应同时有 cl.exe 和 link.exe）
-ls '...\VC\Tools\MSVC\<版本>\bin\Hostx64\x64\cl.exe'
-ls '...\VC\Tools\MSVC\<版本>\bin\Hostx64\x64\link.exe'
+# Check whether a version is complete (should have both cl.exe and link.exe)
+ls '...\VC\Tools\MSVC\<version>\bin\Hostx64\x64\cl.exe'
+ls '...\VC\Tools\MSVC\<version>\bin\Hostx64\x64\link.exe'
 ```
 
-**修复**：删除缺少 `cl.exe` 的残缺工具集目录（需管理员权限），保留完整版本。
-仍不行则用 VS Installer 对 VS 2022 执行 **修复（Repair）**。
+**Fix**: Delete the incomplete toolset directory that lacks `cl.exe` (admin privileges required),
+keeping the complete versions. If that doesn't help, run **Repair** on VS 2022 via the VS Installer.
 
-### 6.2 Windows: CMake 报 "could not find any instance of Visual Studio"
+### 6.2 Windows: CMake reports "could not find any instance of Visual Studio"
 
-**原因**：Visual Studio 的 SetupConfiguration COM 服务器损坏，导致 CMake 无法枚举 VS 实例。
+**Cause**: The Visual Studio SetupConfiguration COM server is broken, so CMake cannot enumerate
+VS instances.
 
-**验证**：vswhere 与 COM 是独立路径，可分别验证：
+**Verify**: vswhere and the COM server are independent paths; check both:
 
 ```powershell
-# vswhere 通常仍可工作（独立于 COM 服务器）
+# vswhere usually still works (independent of the COM server)
 & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -latest -products *
 
-# 若 vswhere 正常但 flutter build 失败 → COM 服务器损坏
+# If vswhere works but flutter build fails -> the COM server is broken
 ```
 
-**修复**：用 VS Installer 对 VS 2022 执行 **修复（Repair）**，会重装 Setup Configuration 组件。
+**Fix**: Run **Repair** on VS 2022 via the VS Installer; it reinstalls the Setup Configuration component.
 
 ### 6.3 Windows: "Unknown CMake command 'apply_standard_settings'"
 
-**原因**：用 Visual Studio IDE 直接打开了 `apps/client/windows/runner/CMakeLists.txt` 作为根目录。
-`apply_standard_settings` 函数定义在**父级** `windows/CMakeLists.txt` 中，runner 子目录单独打开时该函数未定义。
+**Cause**: Visual Studio IDE was pointed directly at `apps/client/windows/runner/CMakeLists.txt`
+as the root. `apply_standard_settings` is defined in the **parent** `windows/CMakeLists.txt`, so it
+is undefined when the runner subdirectory is opened on its own.
 
-**修复**：在 VS IDE 中以 **`apps/client/windows` 文件夹**（即顶层 `windows/CMakeLists.txt`）作为 CMake 根打开，而非 `runner/` 子目录。
+**Fix**: In the VS IDE, open the **`apps/client/windows` folder** (i.e. the top-level
+`windows/CMakeLists.txt`) as the CMake root, not the `runner/` subdirectory.
 
-### 6.4 依赖解析失败 / pub get 超时
+### 6.4 Dependency resolution failure / pub get timeout
 
-- 确认已设置国内镜像（见 1.2）。
-- 删除 `apps/client/.dart_tool` 与 `pubspec.lock` 后重新 `flutter pub get`。
-- 确认 Flutter 版本 ≥ 3.44.8（`flutter --version`）。
+- Make sure mirrors are set (see 1.2).
+- Delete `apps/client/.dart_tool` and `pubspec.lock`, then re-run `flutter pub get`.
+- Confirm Flutter version ≥ 3.44.8 (`flutter --version`).
 
-### 6.5 Windows: flutter doctor 显示 VS 未识别
+### 6.5 Windows: flutter doctor does not detect VS
 
-确保安装 VS 2022 时勾选了 **"使用 C++ 的桌面开发"** 工作负载（仅装 .NET 工作负载不够）。
-补装后重新运行 `flutter doctor -v`。
+Make sure VS 2022 was installed with the **"Desktop development with C++"** workload checked
+(the .NET workload alone is not enough). Re-run `flutter doctor -v` after adding it.
 
-### 6.6 macOS: pod install 报错
+### 6.6 macOS: pod install errors
 
-- 升级 CocoaPods：`sudo gem install cocoapods`。
-- 清理后重装：
+- Upgrade CocoaPods: `sudo gem install cocoapods`.
+- Clean and reinstall:
 
   ```bash
   cd apps/client/macos
@@ -252,25 +262,25 @@ ls '...\VC\Tools\MSVC\<版本>\bin\Hostx64\x64\link.exe'
   pod install --repo-update
   ```
 
-### 6.7 运行环境（PATH 持久化）
+### 6.7 Persistent PATH setup
 
-为避免每次手动设置，建议将 Flutter 加入系统 PATH：
+To avoid setting it every time, add Flutter to your system PATH:
 
-- **Windows**：将 `<flutter>\bin` 加入系统环境变量 `Path`。
-- **macOS**：在 `~/.zshrc` 加入 `export PATH="$HOME/development/flutter/bin:$PATH"`。
+- **Windows**: add `<flutter>\bin` to the system `Path` environment variable.
+- **macOS**: add `export PATH="$HOME/development/flutter/bin:$PATH"` to `~/.zshrc`.
 
 ---
 
-## 7. 构建流程一览
+## 7. Build Flow Overview
 
 ```
-flutter pub get          # 解析依赖（含 packages/ 本地包）
+flutter pub get          # resolve deps (incl. packages/ local packages)
        │
-       ├── Windows: flutter build windows --<mode>  →  .exe + .dll + data/
-       │            └─ (可选) dart run msix:create  →  .msix
+       ├── Windows: flutter build windows --<mode>  ->  .exe + .dll + data/
+       │            └─ (optional) dart run msix:create  ->  .msix
        │
-       └── macOS:   flutter build macos --<mode>    →  .app
-                    └─ (首次/插件变更) cd macos && pod install
+       └── macOS:   flutter build macos --<mode>    ->  .app
+                    └─ (first time / plugin change) cd macos && pod install
 ```
 
-如构建过程中遇到本文件未覆盖的问题，可参照 `apps/client/README.md` 或提交 Issue。
+For issues not covered here, see `apps/client/README.md` or open an Issue.

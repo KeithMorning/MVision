@@ -1,4 +1,4 @@
-# MVision Client
+# MVision 客户端
 
 MVision 的 Flutter 客户端。当前 Windows 端处于 Phase 0 平台接入阶段；
 桌面 UI 的本地知识阅读器切片在 `lib/desktop/` 中。
