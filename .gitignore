@@ -32,6 +32,11 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Claude Code local config
+.agents/
+.claude/
+skills-lock.json
+
 # Temp
 tmp/
 temp/

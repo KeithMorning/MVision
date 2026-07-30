@@ -104,9 +104,6 @@ class ScannerService {
           body: content,
         );
 
-        // Parse and store links
-        _parseAndStoreLinks(docId, content);
-
         // Parse and store tags
         _parseAndStoreTags(docId, content);
 
@@ -119,8 +116,63 @@ class ScannerService {
       onProgress?.call(i + 1, files.length);
     }
 
+    // Pass 2: rebuild links for the whole vault.
+    //
+    // Link resolution requires every document to be indexed first. Parsing
+    // per-file during pass 1 silently dropped forward references (a file
+    // linking to a not-yet-scanned file), and since unchanged files are
+    // skipped on later scans, those links never healed.
+    await _rebuildLinks(rootPath);
+
     db.updateSourceLastScanned(sourceId);
     return updated;
+  }
+
+  /// Re-parse links for every indexed document.
+  ///
+  /// Vaults are small (hundreds of notes), so a full rebuild after each scan
+  /// is cheap and guarantees a correct link graph.
+  Future<void> _rebuildLinks(String rootPath) async {
+    final docs = db.getAllDocumentTitles();
+
+    // Lookup indexes, Obsidian semantics:
+    // - byName:  file basename without extension (primary wiki-link target)
+    // - byPath:  full relative path without extension (path-form links)
+    // - byTitle: frontmatter/heading title (fallback for legacy data)
+    final byName = <String, Map<String, dynamic>>{};
+    final byPath = <String, Map<String, dynamic>>{};
+    final byTitle = <String, Map<String, dynamic>>{};
+    for (final d in docs) {
+      final path = d['path'] as String;
+      final normalized = p.normalize(path).toLowerCase();
+      final withoutExt = normalized.endsWith('.markdown')
+          ? normalized.substring(0, normalized.length - '.markdown'.length)
+          : normalized.endsWith('.md')
+              ? normalized.substring(0, normalized.length - 3)
+              : normalized;
+      byName.putIfAbsent(p.basename(withoutExt), () => d);
+      byPath.putIfAbsent(withoutExt, () => d);
+      byTitle.putIfAbsent((d['title'] as String).toLowerCase(), () => d);
+    }
+
+    for (final d in docs) {
+      final relPath = d['path'] as String;
+      final file = File(p.join(rootPath, relPath));
+      final String content;
+      try {
+        content = await file.readAsString();
+      } catch (_) {
+        continue;
+      }
+      _parseAndStoreLinks(
+        d['id'] as String,
+        relPath,
+        content,
+        byName: byName,
+        byPath: byPath,
+        byTitle: byTitle,
+      );
+    }
   }
 
   /// Recursively collect Markdown files, skipping ignored directories.
@@ -174,7 +226,14 @@ class ScannerService {
   }
 
   /// Parse wiki links and markdown links, store in DB.
-  void _parseAndStoreLinks(String docId, String content) {
+  void _parseAndStoreLinks(
+    String docId,
+    String docPath,
+    String content, {
+    required Map<String, Map<String, dynamic>> byName,
+    required Map<String, Map<String, dynamic>> byPath,
+    required Map<String, Map<String, dynamic>> byTitle,
+  }) {
     db.clearLinksForDocument(docId);
 
     // Remove code blocks before parsing links
@@ -182,12 +241,18 @@ class ScannerService {
 
     // Parse [[wiki links]]
     for (final match in _wikiLinkPattern.allMatches(cleanContent)) {
-      final target = match.group(1)!.trim();
+      // Strip heading/block reference: [[note#heading]] -> note
+      final target = match.group(1)!.split('#').first.trim();
+      if (target.isEmpty) continue;
       final context = _extractContext(cleanContent, match.start);
 
-      // Try to resolve target to a document
-      final targetDoc = db.findDocumentByTitle(target);
-      if (targetDoc != null) {
+      final targetDoc = _resolveWikiLink(
+        target,
+        byName: byName,
+        byPath: byPath,
+        byTitle: byTitle,
+      );
+      if (targetDoc != null && targetDoc['id'] != docId) {
         db.insertLink(
           sourceDocId: docId,
           targetDocId: targetDoc['id'] as String,
@@ -203,9 +268,8 @@ class ScannerService {
       final linkPath = match.group(2)!.trim();
       final context = _extractContext(cleanContent, match.start);
 
-      // Resolve relative path to document
-      final targetDoc = _resolveMarkdownLink(linkPath);
-      if (targetDoc != null) {
+      final targetDoc = _resolveMarkdownLink(linkPath, docPath, byPath, byName);
+      if (targetDoc != null && targetDoc['id'] != docId) {
         db.insertLink(
           sourceDocId: docId,
           targetDocId: targetDoc['id'] as String,
@@ -215,6 +279,23 @@ class ScannerService {
         );
       }
     }
+  }
+
+  /// Resolve a [[wiki link]] target, Obsidian semantics:
+  /// 1. file basename without extension (primary)
+  /// 2. relative path without extension ([[folder/note]])
+  /// 3. document title (fallback, keeps legacy links working)
+  Map<String, dynamic>? _resolveWikiLink(
+    String target, {
+    required Map<String, Map<String, dynamic>> byName,
+    required Map<String, Map<String, dynamic>> byPath,
+    required Map<String, Map<String, dynamic>> byTitle,
+  }) {
+    final key = target.toLowerCase();
+    final normalized = p.normalize(key);
+    return byName[p.basename(normalized)] ??
+        byPath[normalized] ??
+        byTitle[key];
   }
 
   /// Parse tags from content and frontmatter, store in DB.
@@ -282,16 +363,35 @@ class ScannerService {
   }
 
   /// Resolve a markdown link path to a document.
-  Map<String, dynamic>? _resolveMarkdownLink(String linkPath) {
+  ///
+  /// Relative links are resolved against the source document's directory;
+  /// falls back to basename matching.
+  Map<String, dynamic>? _resolveMarkdownLink(
+    String linkPath,
+    String docPath,
+    Map<String, Map<String, dynamic>> byPath,
+    Map<String, Map<String, dynamic>> byName,
+  ) {
     // Remove anchor
-    final path = linkPath.split('#').first;
+    final path = linkPath.split('#').first.trim();
     if (path.isEmpty) return null;
 
-    // Try to find by path suffix
-    final docs = db.getAllDocumentTitles();
-    return docs.where((d) {
-      final docPath = d['path'] as String;
-      return docPath.endsWith(path) || docPath == path;
-    }).firstOrNull;
+    String stripExt(String s) {
+      final lower = s.toLowerCase();
+      if (lower.endsWith('.markdown')) {
+        return s.substring(0, s.length - '.markdown'.length);
+      }
+      if (lower.endsWith('.md')) return s.substring(0, s.length - 3);
+      return s;
+    }
+
+    // Resolve relative to the source document's directory
+    final resolved =
+        p.normalize(p.join(p.dirname(docPath), path)).toLowerCase();
+    final direct = byPath[stripExt(resolved)];
+    if (direct != null) return direct;
+
+    // Fallback: basename match
+    return byName[p.basename(stripExt(resolved))];
   }
 }

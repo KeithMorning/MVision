@@ -650,7 +650,7 @@ class DatabaseService {
   /// Get all document titles for autocomplete.
   List<Map<String, dynamic>> getAllDocumentTitles() {
     final result = _db.select(
-      'SELECT id, title, path FROM documents ORDER BY title',
+      'SELECT id, title, path, modified_at FROM documents ORDER BY title',
     );
     return result.map((row) => row).toList();
   }

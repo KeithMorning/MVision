@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
+import '../../app/theme_mode.dart';
 
 /// Settings page - vault config, appearance, sync.
 class SettingsPage extends ConsumerWidget {
@@ -83,12 +84,7 @@ class SettingsPage extends ConsumerWidget {
           // Appearance section
           _SectionHeader(title: '外观'),
           const SizedBox(height: AppSpacing.md),
-          _SettingTile(
-            icon: Icons.dark_mode_rounded,
-            title: '主题模式',
-            subtitle: '跟随系统',
-            onTap: () {},
-          ),
+          _ThemeModeCard(isDark: isDark),
           const SizedBox(height: AppSpacing.xxl),
           // About
           _SectionHeader(title: '关于'),
@@ -183,6 +179,70 @@ class _SettingTile extends StatelessWidget {
               : AppColors.textSecondary,
         ),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Theme mode selector: follow system / light / dark.
+class _ThemeModeCard extends ConsumerWidget {
+  const _ThemeModeCard({required this.isDark});
+
+  final bool isDark;
+
+  static const _modes = [
+    (ThemeMode.system, '跟随系统', Icons.settings_suggest_rounded),
+    (ThemeMode.light, '浅色', Icons.light_mode_rounded),
+    (ThemeMode.dark, '深色', Icons.dark_mode_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final current = ref.watch(themeModeProvider);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.dark_mode_rounded,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Text('主题模式', style: theme.textTheme.bodyLarge),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<ThemeMode>(
+                segments: [
+                  for (final (mode, label, icon) in _modes)
+                    ButtonSegment(
+                      value: mode,
+                      label: Text(label),
+                      icon: Icon(icon, size: 16),
+                    ),
+                ],
+                selected: {current},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) {
+                  ref
+                      .read(themeModeProvider.notifier)
+                      .setMode(selection.first);
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
