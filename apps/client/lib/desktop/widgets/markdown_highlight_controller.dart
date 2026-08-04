@@ -29,6 +29,13 @@ class MarkdownHighlightController extends TextEditingController {
       return TextSpan(text: text, style: style);
     }
 
+    // For very large documents, skip per-line parsing: buildTextSpan runs on
+    // every keystroke, and parsing tens of thousands of lines each keypress
+    // freezes the caret (the editor feels like it ignores input).
+    if (text.length > 40000) {
+      return TextSpan(text: text, style: style);
+    }
+
     final spans = <TextSpan>[];
     final lines = text.split('\n');
     bool inCodeBlock = false;
@@ -70,17 +77,20 @@ class MarkdownHighlightController extends TextEditingController {
       return TextSpan(text: line, style: baseStyle);
     }
 
-    // Headings (# to ######)
+    // Headings (# to ######).
+    // Keep the base font size: enlarging the heading font inside a wrapping
+    // EditableText (maxLines: null) breaks caret offset mapping, so typing at
+    // the end of a heading line freezes the caret / inserts the char invisibly.
+    // Obsidian's source mode likewise keeps headings at body size and only
+    // colors them; the rendered (larger) size comes from the preview pane.
     final headingMatch = RegExp(r'^(#{1,6})\s').firstMatch(line);
     if (headingMatch != null) {
       final level = headingMatch.group(1)!.length;
-      final baseFontSize = baseStyle?.fontSize ?? 14;
       return TextSpan(
         text: line,
         style: baseStyle?.copyWith(
           color: _headingColor,
           fontWeight: level <= 2 ? FontWeight.bold : FontWeight.w600,
-          fontSize: baseFontSize + (6 - level) * 1.5,
         ),
       );
     }

@@ -1,14 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 import 'package:path/path.dart' as p;
 
 import '../../app/providers.dart';
+import '../../app/router.dart';
 import '../widgets/backlinks_panel.dart';
+import '../widgets/markdown_syntax_highlighter.dart';
 import '../widgets/tag_panel.dart';
 
 /// Markdown reader page with TOC and Wiki Link support.
@@ -21,7 +23,7 @@ class ReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
 }
 
-class _ReaderPageState extends ConsumerState<ReaderPage> {
+class _ReaderPageState extends ConsumerState<ReaderPage> with RouteAware {
   final _scrollController = ScrollController();
   final _markdownKey = GlobalKey();
   
@@ -33,6 +35,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _showBacklinks = false;
   bool _isStarred = false;
 
+  // Reused across builds so the highlighter's per-source cache survives.
+  MarkdownSyntaxHighlighter? _highlighter;
+  bool _highlighterIsDark = false;
+
+  MarkdownSyntaxHighlighter _syntaxHighlighter(bool isDark) {
+    if (_highlighter == null || _highlighterIsDark != isDark) {
+      _highlighterIsDark = isDark;
+      _highlighter = MarkdownSyntaxHighlighter(isDark: isDark);
+    }
+    return _highlighter!;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +54,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<void>) routeObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPopNext() {
+    // Returning from a pushed route (e.g. the editor): the file may have
+    // changed, so reload content and rebuild the TOC.
+    _loadDocument();
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _scrollController.dispose();
     super.dispose();
   }
@@ -259,24 +288,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                         controller: _scrollController,
                         data: _processWikiLinks(_content),
                         padding: const EdgeInsets.all(AppSpacing.xxl),
-                        styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                          p: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
-                          h1: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                          h2: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                          h3: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                          code: theme.textTheme.bodyMedium?.copyWith(
-                            fontFamily: 'monospace',
-                            backgroundColor: isDark
-                                ? AppColors.surfaceVariantDark
-                                : AppColors.surfaceVariant,
-                          ),
-                        ),
+                        styleSheet: buildMarkdownStyleSheet(theme, isDark),
+                        syntaxHighlighter: _syntaxHighlighter(isDark),
+                        builders: {
+                          'code': InlineCodeBuilder(isDark: isDark),
+                        },
                         onTapLink: (text, href, title) {
                           // Handle Wiki Links
                           if (href != null && href.startsWith('wiki://')) {

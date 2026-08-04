@@ -58,6 +58,16 @@
 | 优先选择纯 Dart 依赖 | 减少原生插件兼容性问题 |
 | 引入含原生插件的依赖前，必须记录五平台支持状态 | iOS/Android/HarmonyOS/macOS/Windows |
 
+### 4.1 第三方依赖记录（apps/client）
+
+| 依赖 | 许可证 | 维护状态 | 五平台 | 用途 |
+|------|--------|----------|--------|------|
+| `flutter_markdown_plus` | BSD-3-Clause | 活跃（接替已停更的 `flutter_markdown`） | 纯 Dart，五平台均支持 | Markdown 渲染，含 `SyntaxHighlighter` 钩子 |
+| `highlight` | BSD-3-Clause | 活跃 | 纯 Dart，五平台均支持 | 代码块语法高亮（按语言子集自动检测） |
+
+> `flutter_markdown` 已移除（官方标记 discontinued，由 `flutter_markdown_plus` 接替，API 兼容）。
+> 两个新依赖均为纯 Dart，无原生插件，iOS/Android/HarmonyOS/macOS/Windows 均可用。
+
 ---
 
 ## 5. 完成定义

@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
+import '../widgets/markdown_syntax_highlighter.dart';
 import 'ai_page.dart';
 
 /// Knowledge Q&A page - ask questions about your knowledge base.
@@ -346,7 +347,8 @@ class _MessageBubble extends StatelessWidget {
                     MarkdownBody(
                       data: message.content,
                       selectable: true,
-                      styleSheet: MarkdownStyleSheet.fromTheme(theme),
+                      styleSheet: buildMarkdownStyleSheet(
+                          theme, theme.brightness == Brightness.dark),
                     ),
                   if (message.sources.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),

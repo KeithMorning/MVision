@@ -1,13 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:design_system/design_system.dart';
 
 import '../../app/providers.dart';
 import '../../services/ai_service.dart';
+import '../widgets/markdown_syntax_highlighter.dart';
 import 'ai_page.dart';
 
 /// Wiki compilation page - select sources, compile, review patches.
@@ -475,7 +476,8 @@ class _PatchCard extends StatelessWidget {
               child: MarkdownBody(
                 data: patch.content,
                 selectable: true,
-                styleSheet: MarkdownStyleSheet.fromTheme(theme),
+                styleSheet:
+                    buildMarkdownStyleSheet(theme, theme.brightness == Brightness.dark),
               ),
             ),
             // References

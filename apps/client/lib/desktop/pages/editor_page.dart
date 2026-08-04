@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:design_system/design_system.dart';
 import 'package:path/path.dart' as p;
@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../../app/providers.dart';
 import '../../shared/platform_keys.dart';
 import '../widgets/markdown_highlight_controller.dart';
+import '../widgets/markdown_syntax_highlighter.dart';
 import '../widgets/note_history_dialog.dart';
 
 /// View mode for the editor.
@@ -42,6 +43,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   String _filePath = '';
   String _title = '';
   Timer? _autosaveTimer;
+  Timer? _recoveryTimer;
+  Timer? _wordCountTimer;
   String? _recoveryPath;
   bool _showRecoveryBanner = false;
   String? _appSupportPath;
@@ -60,6 +63,19 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
   static const _maxUndoSteps = 50;
+
+  // Reused across builds so the highlighter's per-source cache survives
+  // (the split-view preview rebuilds on every keystroke).
+  MarkdownSyntaxHighlighter? _highlighter;
+  bool _highlighterIsDark = false;
+
+  MarkdownSyntaxHighlighter _syntaxHighlighter(bool isDark) {
+    if (_highlighter == null || _highlighterIsDark != isDark) {
+      _highlighterIsDark = isDark;
+      _highlighter = MarkdownSyntaxHighlighter(isDark: isDark);
+    }
+    return _highlighter!;
+  }
 
   @override
   void initState() {
@@ -82,6 +98,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   @override
   void dispose() {
     _autosaveTimer?.cancel();
+    _recoveryTimer?.cancel();
+    _wordCountTimer?.cancel();
     _autocompleteOverlay?.remove();
     _controller.dispose();
     _scrollController.dispose();
@@ -214,10 +232,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     if (!_isDirty) {
       setState(() => _isDirty = true);
     }
-    // Save recovery file immediately for crash safety
-    _saveRecoveryFile();
-    // Update word count
-    _updateWordCount();
+    // Debounce expensive per-keystroke work. Writing the whole document to
+    // disk (recovery file) and recomputing the word count (which triggers a
+    // rebuild -> another buildTextSpan) on every keystroke froze the caret in
+    // large documents - the editor looked like it ignored space/typing.
+    _recoveryTimer?.cancel();
+    _recoveryTimer = Timer(const Duration(milliseconds: 800), _saveRecoveryFile);
+    _wordCountTimer?.cancel();
+    _wordCountTimer = Timer(const Duration(milliseconds: 400), _updateWordCount);
     // Check for wiki link autocomplete
     _checkWikiLinkAutocomplete();
     // Schedule autosave (2 seconds after last edit)
@@ -690,19 +712,35 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         child: KeyboardListener(
           focusNode: FocusNode(),
           onKeyEvent: _handleKeyEvent,
-          child: TextField(
-            controller: _controller,
-            focusNode: _focusNode,
-            scrollController: _scrollController,
-            maxLines: null,
-            expands: true,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontFamily: 'monospace',
-              height: 1.7,
-            ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.all(AppSpacing.xxl),
+          // Disable the MaterialScrollBehavior auto-scrollbar (it sits at the
+          // text viewport edge, i.e. inset by the content padding) and use an
+          // explicit Scrollbar at the pane's far-right edge instead.
+          child: ScrollConfiguration(
+            behavior:
+                const MaterialScrollBehavior().copyWith(scrollbars: false),
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                scrollController: _scrollController,
+                maxLines: null,
+                expands: true,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontFamily: 'monospace',
+                  height: 1.7,
+                ),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xxl,
+                    AppSpacing.xxl,
+                    AppSpacing.xxl,
+                    AppSpacing.xxl,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -741,16 +779,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         child: Markdown(
           data: _controller.text,
           padding: const EdgeInsets.all(AppSpacing.xxl),
-          styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-            p: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
-            h1: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-            h2: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-            h3: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            code: theme.textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
-              backgroundColor: isDark ? AppColors.surfaceVariantDark : AppColors.surfaceVariant,
-            ),
-          ),
+          styleSheet: buildMarkdownStyleSheet(theme, isDark),
+          syntaxHighlighter: _syntaxHighlighter(isDark),
+          builders: {
+            'code': InlineCodeBuilder(isDark: isDark),
+          },
         ),
       ),
     );

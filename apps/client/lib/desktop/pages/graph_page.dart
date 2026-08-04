@@ -16,8 +16,9 @@ import '../../app/providers.dart';
 /// - node size scales with link count
 /// - dragging a node keeps the simulation warm so neighbors follow live
 ///
-/// Timelapse: press play to grow the graph note-by-note in file order;
-/// new nodes sprout from their already-visible neighbors.
+/// Rebuild: the AppBar rescan action re-indexes the vault and reloads the
+/// graph; the force simulation then unfolds the new structure (physics, not
+/// a tween - see docs/design/interaction-principles.md #1).
 ///
 /// Interactions (raw pointer events, no gesture arena):
 /// - scroll wheel / trackpad pinch: zoom to cursor
@@ -33,17 +34,15 @@ class GraphPage extends ConsumerStatefulWidget {
 }
 
 class _GraphPageState extends ConsumerState<GraphPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _animationController;
   late AnimationController _fadeController;
   late CurvedAnimation _fadeCurve;
-  late AnimationController _playController;
 
   // Graph data
   List<GraphNode> _nodes = [];
   List<GraphEdge> _edges = [];
   Map<int, Set<int>> _neighbors = {};
-  List<double> _bornAt = []; // normalized 0..1 by file modified time
 
   // View transform
   Offset _panOffset = Offset.zero;
@@ -67,14 +66,10 @@ class _GraphPageState extends ConsumerState<GraphPage>
   int _simulationTicks = 0;
   static const int _maxSimulationTicks = 300;
 
-  /// Steady force input while dragging / playing: neighbors follow live.
+  /// Steady force input while dragging: neighbors follow live.
   static const double _warmCooling = 0.3;
   bool _didInitialFit = false;
 
-  // Timelapse
-  bool _isPlaying = false;
-  double _playProgress = 1.0; // 1 = fully grown
-  final Set<int> _appeared = {};
   final _spawnRandom = math.Random(7);
 
   /// Hover wins over selection as the focused neighborhood.
@@ -99,23 +94,6 @@ class _GraphPageState extends ConsumerState<GraphPage>
       reverseCurve: Curves.easeInCubic,
     );
 
-    // Timelapse playback
-    _playController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )
-      ..addListener(() {
-        setState(() {
-          _playProgress = _playController.value;
-          _syncAppearances();
-        });
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          setState(() => _isPlaying = false);
-        }
-      });
-
     _loadGraphData();
   }
 
@@ -124,7 +102,6 @@ class _GraphPageState extends ConsumerState<GraphPage>
     _animationController.dispose();
     _fadeCurve.dispose();
     _fadeController.dispose();
-    _playController.dispose();
     super.dispose();
   }
 
@@ -177,8 +154,10 @@ class _GraphPageState extends ConsumerState<GraphPage>
     }
 
     _computeComponentCenters();
-    _computeBirthTimes();
-    _appeared.addAll(List.generate(_nodes.length, (i) => i));
+
+    // Fresh layout: reset the sim and the fit flag so the new structure
+    // unfolds via physics and re-fits to the view when it settles.
+    _didInitialFit = false;
 
     // Start simulation
     _simulationTicks = 0;
@@ -249,31 +228,11 @@ class _GraphPageState extends ConsumerState<GraphPage>
     }
   }
 
-  /// Normalized birth times (0..1) from file modified time, for timelapse.
-  void _computeBirthTimes() {
-    if (_nodes.isEmpty) {
-      _bornAt = [];
-      return;
-    }
-    int minT = _nodes.first.modifiedAt, maxT = _nodes.first.modifiedAt;
-    for (final node in _nodes) {
-      minT = math.min(minT, node.modifiedAt);
-      maxT = math.max(maxT, node.modifiedAt);
-    }
-    final span = maxT - minT;
-    _bornAt = [
-      for (int i = 0; i < _nodes.length; i++)
-        span > 0
-            ? (_nodes[i].modifiedAt - minT) / span
-            : i / math.max(_nodes.length - 1, 1),
-    ];
-  }
-
   void _simulationStep() {
     if (_nodes.isEmpty) return;
 
     _simulationTicks++;
-    final keepAlive = _dragNodeIndex != null || _isPlaying;
+    final keepAlive = _dragNodeIndex != null;
 
     final double cooling;
     if (_simulationTicks > _maxSimulationTicks) {
@@ -399,60 +358,17 @@ class _GraphPageState extends ConsumerState<GraphPage>
   }
 
   // ============================================================
-  // Timelapse
+  // Re-scan & rebuild
   // ============================================================
 
-  void _togglePlay() {
-    if (_isPlaying) {
-      _playController.stop();
-      setState(() => _isPlaying = false);
-      return;
-    }
-    setState(() {
-      _isPlaying = true;
-      _appeared.clear();
-    });
-    _warmUpSimulation();
-    _playController.forward(from: 0);
-  }
-
-  void _onScrub(double value) {
-    _playController.stop();
-    setState(() {
-      _isPlaying = false;
-      _playProgress = value;
-      _playController.value = value;
-      _syncAppearances();
-    });
-  }
-
-  /// Spawn nodes whose birth time has arrived; they sprout from their
-  /// already-visible neighbors (or near the center if they have none).
-  void _syncAppearances() {
-    for (int i = 0; i < _nodes.length; i++) {
-      if (_appeared.contains(i) || _bornAt[i] > _playProgress) continue;
-      _appeared.add(i);
-      final node = _nodes[i];
-
-      final visibleNeighbors =
-          _neighbors[i]!.where((n) => _appeared.contains(n)).toList();
-      if (visibleNeighbors.isNotEmpty) {
-        double sx = 0, sy = 0;
-        for (final n in visibleNeighbors) {
-          sx += _nodes[n].x;
-          sy += _nodes[n].y;
-        }
-        node.x = sx / visibleNeighbors.length +
-            (_spawnRandom.nextDouble() - 0.5) * 20;
-        node.y = sy / visibleNeighbors.length +
-            (_spawnRandom.nextDouble() - 0.5) * 20;
-      } else {
-        node.x = node.cx + (_spawnRandom.nextDouble() - 0.5) * 60;
-        node.y = node.cy + (_spawnRandom.nextDouble() - 0.5) * 60;
-      }
-      node.vx = 0;
-      node.vy = 0;
-    }
+  /// Re-index the vault from disk, then rebuild the graph from the
+  /// freshly-scanned database. The force simulation unfolds the new
+  /// structure naturally (physics, not a tween) - see
+  /// docs/design/interaction-principles.md #1.
+  Future<void> _rescanAndRebuild() async {
+    await scanVault(ref);
+    if (!mounted) return;
+    _loadGraphData();
   }
 
   // ============================================================
@@ -685,6 +601,7 @@ class _GraphPageState extends ConsumerState<GraphPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final scanState = ref.watch(scanStateProvider);
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
@@ -723,6 +640,18 @@ class _GraphPageState extends ConsumerState<GraphPage>
                 ),
               ],
             ),
+          ),
+          // Re-scan vault & rebuild graph (physics unfolds the new structure)
+          IconButton(
+            icon: scanState.isScanning
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync_rounded),
+            tooltip: scanState.isScanning ? '扫描中…' : '重新扫描知识库',
+            onPressed: scanState.isScanning ? null : _rescanAndRebuild,
           ),
           // Restart simulation
           IconButton(
@@ -802,26 +731,12 @@ class _GraphPageState extends ConsumerState<GraphPage>
                             selectedIndex: _selectedNodeIndex,
                             hoveredIndex: _hoveredNodeIndex,
                             focusAlpha: _fadeCurve.value,
-                            timeProgress: _playProgress,
-                            bornAt: _bornAt,
                             isDark: isDark,
                           ),
                         ),
                       ),
                     );
                   },
-                ),
-                // Timelapse controls (top right, Obsidian-style)
-                Positioned(
-                  top: AppSpacing.lg,
-                  right: AppSpacing.lg,
-                  child: _TimelapseBar(
-                    isDark: isDark,
-                    isPlaying: _isPlaying,
-                    progress: _playProgress,
-                    onToggle: _togglePlay,
-                    onScrub: _onScrub,
-                  ),
                 ),
                 // Zoom controls (bottom right)
                 Positioned(
@@ -924,9 +839,6 @@ class GraphPainter extends CustomPainter {
   /// 0..1 eased progress of neighborhood dimming.
   final double focusAlpha;
 
-  /// 0..1 timelapse progress (1 = fully grown).
-  final double timeProgress;
-  final List<double> bornAt;
   final bool isDark;
 
   GraphPainter({
@@ -938,8 +850,6 @@ class GraphPainter extends CustomPainter {
     required this.selectedIndex,
     required this.hoveredIndex,
     required this.focusAlpha,
-    required this.timeProgress,
-    required this.bornAt,
     required this.isDark,
   });
 
@@ -965,13 +875,6 @@ class GraphPainter extends CustomPainter {
         _ => 0.9,
       };
 
-  /// Timelapse visibility: 0 = not born yet, 1 = fully appeared.
-  double _visibility(int i) {
-    if (timeProgress >= 1.0 || i >= bornAt.length) return 1.0;
-    final t = ((timeProgress - bornAt[i]) / 0.04).clamp(0.0, 1.0);
-    return Curves.easeOut.transform(t);
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -989,10 +892,6 @@ class GraphPainter extends CustomPainter {
     final baseEdgeColor =
         isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A);
     for (final edge in edges) {
-      final visA = _visibility(edge.source);
-      final visB = _visibility(edge.target);
-      if (visA < 1.0 || visB < 1.0) continue; // both ends must be born
-
       final source = nodes[edge.source];
       final target = nodes[edge.target];
 
@@ -1027,9 +926,6 @@ class GraphPainter extends CustomPainter {
 
     // ---- Nodes ----
     for (int i = 0; i < nodes.length; i++) {
-      final vis = _visibility(i);
-      if (vis <= 0.0) continue;
-
       final node = nodes[i];
       final isSelected = selectedIndex == i;
       final isHovered = hoveredIndex == i;
@@ -1047,7 +943,7 @@ class GraphPainter extends CustomPainter {
       }
 
       final baseColor = node.tier == 0 ? _isolatedColor : _nodeColor;
-      final radius = node.radius * (0.3 + 0.7 * vis); // grow-in effect
+      final radius = node.radius;
 
       // Glow behind focused node
       if (isFocused) {
@@ -1065,7 +961,7 @@ class GraphPainter extends CustomPainter {
         Offset(node.x, node.y),
         radius,
         Paint()
-          ..color = baseColor.withValues(alpha: alpha * vis)
+          ..color = baseColor.withValues(alpha: alpha)
           ..style = PaintingStyle.fill,
       );
 
@@ -1075,7 +971,7 @@ class GraphPainter extends CustomPainter {
           Offset(node.x, node.y),
           radius + 2.5 / scale,
           Paint()
-            ..color = baseColor.withValues(alpha: alpha * vis * 0.4)
+            ..color = baseColor.withValues(alpha: alpha * 0.4)
             ..strokeWidth = 1.0 / scale
             ..style = PaintingStyle.stroke,
         );
@@ -1097,8 +993,6 @@ class GraphPainter extends CustomPainter {
     // ---- Labels (pills, drawn on top) ----
     final showAll = scale > 1.3;
     for (int i = 0; i < nodes.length; i++) {
-      if (_visibility(i) < 1.0) continue;
-
       final node = nodes[i];
       final isSelected = selectedIndex == i;
       final isHovered = hoveredIndex == i;
@@ -1203,86 +1097,6 @@ class GraphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GraphPainter oldDelegate) => true;
-}
-
-/// Timelapse playback bar (bottom center).
-class _TimelapseBar extends StatelessWidget {
-  const _TimelapseBar({
-    required this.isDark,
-    required this.isPlaying,
-    required this.progress,
-    required this.onToggle,
-    required this.onScrub,
-  });
-
-  final bool isDark;
-  final bool isPlaying;
-  final double progress;
-  final VoidCallback onToggle;
-  final ValueChanged<double> onScrub;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = isDark ? AppColors.surfaceDark : AppColors.surface;
-    final borderColor = isDark ? AppColors.borderDark : AppColors.border;
-    final iconColor =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: bg.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              size: 20,
-            ),
-            color: AppColors.primary,
-            tooltip: isPlaying ? '暂停' : '播放生长动画',
-            onPressed: onToggle,
-          ),
-          SizedBox(
-            width: 140,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape:
-                    const RoundSliderOverlayShape(overlayRadius: 12),
-              ),
-              child: Slider(
-                value: progress.clamp(0.0, 1.0),
-                onChanged: onScrub,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            '${(progress * 100).round()}%',
-            style: TextStyle(fontSize: 11, color: iconColor),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-        ],
-      ),
-    );
-  }
 }
 
 /// Floating zoom control cluster.

@@ -47,9 +47,15 @@ class FadeTransitionPage extends CustomTransitionPage<void> {
         );
 }
 
+/// Observes page-route push/pop so pages (e.g. ReaderPage) can refresh when
+/// the user returns to them from a pushed route (e.g. coming back from the
+/// editor). Subscribed via `RouteAware` in `didChangeDependencies`.
+final routeObserver = RouteObserver<PageRoute<void>>();
+
 /// Application router configuration.
 final appRouter = GoRouter(
   initialLocation: '/home',
+  observers: [routeObserver],
   routes: [
     ShellRoute(
       builder: (context, state, child) => ResponsiveShell(child: child),
